@@ -121,11 +121,7 @@ test('summarize and reportStatus', () => {
   assert.equal(reportStatus(r), 'pass');
   r.results[r.features[0].id].max = '99';
   assert.equal(reportStatus(r), 'fail');
-  // A lot rejected by Ac/Re is a failed report even if every measured row passed
   r.results[r.features[0].id].max = r.features[0].nominal;
-  r.header.quantity = '400'; r.header.aql = '2.5'; r.header.inspectionLevel = 'II'; r.header.nonconforming = '4';
-  assert.equal(reportStatus(r), 'fail');
-  r.header.nonconforming = '3';
   assert.equal(reportStatus(r), 'pass');
 });
 
@@ -133,14 +129,14 @@ test('createReport honours field policies; non-lockable fields are always fresh'
   const t = defaultTemplate();
   t.fields.customer = { mode: 'carry', value: 'Fallback Ltd' };
   t.fields.partNo = { mode: 'fixed', value: 'P-100' };
-  t.fields.material = { mode: 'default', value: 'AL 6061' };
+  t.fields.catalogNo = { mode: 'default', value: 'CAT-1' };
   t.fields.revision = { mode: 'blank', value: 'should-not-appear' };
   t.fields.quantity = { mode: 'fixed', value: '500' }; // not lockable: must be ignored
   t.fields.accepted = { mode: 'carry', value: '7' };    // not lockable: must be ignored
   const first = createReport(t, null, new Date(2026, 9, 11));
   assert.equal(first.header.customer, 'Fallback Ltd');
   assert.equal(first.header.partNo, 'P-100');
-  assert.equal(first.header.material, 'AL 6061');
+  assert.equal(first.header.catalogNo, 'CAT-1');
   assert.equal(first.header.revision, '');
   assert.equal(first.header.quantity, '');
   assert.equal(first.header.accepted, '');
@@ -149,10 +145,10 @@ test('createReport honours field policies; non-lockable fields are always fresh'
   assert.equal(isLocked(t, 'partNo'), true);
   assert.equal(isLocked(t, 'quantity'), false);
   assert.equal(isLocked(t, 'customer'), false);
-  first.header.customer = 'Acme'; first.header.accepted = '9'; first.header.material = 'SS304';
+  first.header.customer = 'Acme'; first.header.accepted = '9'; first.header.catalogNo = 'CAT-9';
   const second = createReport(t, first);
   assert.equal(second.header.customer, 'Acme', 'carry copies the previous value');
-  assert.equal(second.header.material, 'AL 6061', 'default resets to the template value');
+  assert.equal(second.header.catalogNo, 'CAT-1', 'default resets to the template value');
   assert.equal(second.header.accepted, '');
   assert.equal(second.header.reportNo, 'FIR-0001', 'the number is consumed by the caller, not by createReport');
   assert.equal(Object.keys(second.results).length, t.features.length);
@@ -200,9 +196,7 @@ test('reportHasContent and headerWarnings', () => {
   assert.equal(reportHasContent({ header: { customer: 'x' }, results: {}, remarks: '' }), true);
   r.header.quantity = '100'; r.header.accepted = '90'; r.header.rejected = '20';
   assert.ok(headerWarnings(r).includes('counts-exceed-lot'));
-  r.header.rejected = '5'; r.header.nonconforming = '50';
-  assert.ok(headerWarnings(r).includes('nonconforming-exceeds-sample'));
-  r.header.nonconforming = '1'; r.header.accepted = 'x';
+  r.header.rejected = '5'; r.header.accepted = 'x';
   assert.ok(headerWarnings(r).includes('counts-invalid'));
   r.header.accepted = ''; r.header.quantity = '12.5';
   assert.ok(headerWarnings(r).includes('quantity-invalid'));

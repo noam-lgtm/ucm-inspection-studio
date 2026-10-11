@@ -8,7 +8,7 @@ Live: https://noam-lgtm.github.io/ucm-inspection-studio/
 
 * **Templates** (per part family or customer): company identity and logo, report numbering, which header fields are fixed / prefilled / carried over from the previous report / blank, and the list of characteristics to inspect.
 * **Reports**: fill the order details, enter the minimum and maximum measured value per characteristic (or GO / NO-GO, OK / NOT OK), get a verdict per row and for the report.
-* **Sampling**: lot size + inspection level + AQL → code letter, sample size and Ac/Re from MIL-STD-105D/E Tables I and II-A (single sampling, normal inspection). Arrow cells and the "sample size ≥ lot → 100% inspection" rule are applied. Lot disposition is derived from the number of nonconforming units found in the sample.
+* **Sampling**: lot size + inspection level + AQL → code letter, sample size and Ac/Re from MIL-STD-105D/E Tables I and II-A (single sampling, normal inspection). Arrow cells and the "sample size ≥ lot → 100% inspection" rule are applied.
 * **PDF**: an English, A4, customer-ready report printed through the browser (Save as PDF). Running header and page numbers on every page, table header repeated across pages.
 * **Archive**: every report is kept locally when a new one is started; reports can be reopened, duplicated, reprinted or deleted.
 * **Backup**: export / import everything as one JSON file. Import merges and never deletes.

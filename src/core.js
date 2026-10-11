@@ -5,7 +5,7 @@
  * from the structured nominal/deviation fields, so a requirement can never
  * contradict the limits that produce the PASS/FAIL verdict.
  */
-import { samplingPlan, lotDisposition, LEVELS } from './sampling.js';
+import { samplingPlan, LEVELS } from './sampling.js';
 
 export const FEATURE_KINDS = Object.freeze(['numeric', 'gauge', 'visual']);
 export const UNITS = Object.freeze(['mm', 'in', 'deg', 'um', '']);
@@ -22,16 +22,13 @@ export const HEADER_FIELDS = Object.freeze([
   { key: 'catalogNo', en: 'Catalog No.', lockable: true },
   { key: 'partNo', en: 'Part No.', lockable: true },
   { key: 'partName', en: 'Part name', lockable: true },
-  { key: 'drawingNo', en: 'Drawing No.', lockable: true },
   { key: 'revision', en: 'Revision', lockable: true },
-  { key: 'material', en: 'Material', lockable: true },
   { key: 'inspector', en: 'Inspector', lockable: true },
   { key: 'generalTolerance', en: 'General tolerance', lockable: true },
   { key: 'aql', en: 'AQL', lockable: true },
   { key: 'inspectionLevel', en: 'Inspection level', lockable: true, type: 'level' },
   { key: 'accepted', en: 'Accepted qty', lockable: false, numeric: true },
   { key: 'rejected', en: 'Rejected qty', lockable: false, numeric: true },
-  { key: 'nonconforming', en: 'Nonconforming in sample', lockable: false, numeric: true },
 ]);
 export const HEADER_KEYS = HEADER_FIELDS.map(f => f.key);
 
@@ -220,9 +217,7 @@ export function defaultFieldPolicy() {
     catalogNo: { mode: 'fixed', value: '' },
     partNo: { mode: 'fixed', value: '' },
     partName: { mode: 'fixed', value: '' },
-    drawingNo: { mode: 'fixed', value: '' },
     revision: { mode: 'fixed', value: '' },
-    material: { mode: 'fixed', value: '' },
     generalTolerance: { mode: 'fixed', value: '±0.1' },
     aql: { mode: 'fixed', value: '2.5' },
     inspectionLevel: { mode: 'fixed', value: 'II' },
@@ -259,7 +254,7 @@ export function formatReportNo(numbering, n = numbering.next) {
 
 // ---------- products (specification per part number + revision) ----------
 
-export const PRODUCT_FIELDS = Object.freeze(['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'drawingNo', 'material', 'generalTolerance', 'aql', 'inspectionLevel']);
+export const PRODUCT_FIELDS = Object.freeze(['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql', 'inspectionLevel']);
 
 export function normalizePartNo(value) { return String(value == null ? '' : value).trim().replace(/\s+/g, ' ').toUpperCase(); }
 export function normalizeRevision(value) { return String(value == null ? '' : value).trim().replace(/^rev\.?\s*/i, '').toUpperCase(); }
@@ -269,7 +264,7 @@ export function productKey(partNo, revision) { return normalizePartNo(partNo) + 
 export function blankProduct() {
   const now = new Date().toISOString();
   return {
-    id: newId(), partNo: '', revision: '', partName: '', catalogNo: '', customer: '', drawingNo: '', material: '',
+    id: newId(), partNo: '', revision: '', partName: '', catalogNo: '', customer: '',
     generalTolerance: '', aql: '', inspectionLevel: '', features: [], sourceFileId: '', sourceReportNo: '',
     notes: '', createdAt: now, updatedAt: now,
   };
@@ -359,8 +354,7 @@ export function reportHasContent(report) {
 export function reportSampling(report) {
   const h = report.header;
   const plan = samplingPlan(h.quantity, LEVELS.includes(h.inspectionLevel) ? h.inspectionLevel : 'II', h.aql);
-  const disposition = lotDisposition(plan, h.nonconforming);
-  return { plan, disposition };
+  return { plan, disposition: null };
 }
 
 /** Header-level validation warnings (keys, translated by the UI). */
@@ -369,12 +363,10 @@ export function headerWarnings(report) {
   const warnings = [];
   const lot = h.quantity ? Number(String(h.quantity).replace(/[\s,]/g, '')) : null;
   const intOrNull = v => (String(v || '').trim() === '' ? null : (/^\d+$/.test(String(v).trim()) ? Number(v) : Number.NaN));
-  const acc = intOrNull(h.accepted), rej = intOrNull(h.rejected), nc = intOrNull(h.nonconforming);
+  const acc = intOrNull(h.accepted), rej = intOrNull(h.rejected);
   if (String(h.quantity || '').trim() && !(Number.isSafeInteger(lot) && lot >= 1)) warnings.push('quantity-invalid');
-  if (Number.isNaN(acc) || Number.isNaN(rej) || Number.isNaN(nc)) warnings.push('counts-invalid');
+  if (Number.isNaN(acc) || Number.isNaN(rej)) warnings.push('counts-invalid');
   if (Number.isSafeInteger(lot) && acc !== null && rej !== null && !Number.isNaN(acc) && !Number.isNaN(rej) && acc + rej > lot) warnings.push('counts-exceed-lot');
-  const { plan } = reportSampling(report);
-  if (plan && nc !== null && !Number.isNaN(nc) && nc > plan.sampleSize) warnings.push('nonconforming-exceeds-sample');
   if (String(h.inspectionDate || '').trim() && !/^\d{4}-\d{2}-\d{2}$/.test(h.inspectionDate)) warnings.push('date-invalid');
   return warnings;
 }

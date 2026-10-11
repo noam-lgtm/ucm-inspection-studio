@@ -174,7 +174,7 @@ function headerField(key, report, template) {
 }
 
 function samplingPanelHtml(report) {
-  const { plan, disposition } = Core.reportSampling(report);
+  const { plan } = Core.reportSampling(report);
   const tpl = activeTemplate();
   let big = '—', foot = esc(t('enter_quantity')), notes = [];
   if (plan) {
@@ -190,12 +190,8 @@ function samplingPanelHtml(report) {
       if (!plan.plan) notes.push(t('plan_unavailable'));
     }
   }
-  const dispo = disposition === 'accept' ? `<span class="pill pill-ok">${esc(t('disposition_accept'))}</span>`
-    : disposition === 'reject' ? `<span class="pill pill-fail">${esc(t('disposition_reject'))}</span>`
-      : `<span class="pill pill-empty">${esc(t('disposition_none'))}</span>`;
   return `<div class="sample-big" dir="ltr">${big}</div><div class="sample-foot">${foot}</div>
     ${notes.map(n => `<div class="sample-note">${esc(n)}</div>`).join('')}
-    <div class="dispo"><span>${esc(t('disposition'))}</span>${dispo}</div>
     <div class="sample-basis">${esc(t('sampling_basis', { standard: tpl.company.standardName || 'MIL-STD-105D' }))}</div>`;
 }
 
@@ -248,7 +244,7 @@ function renderReport() {
   const report = state.draft;
   const tpl = activeTemplate();
   const orderKeys = ['reportNo', 'inspectionDate', 'customer', 'purchaseOrder', 'productionOrder', 'quantity', 'inspector'];
-  const productKeys = ['partNo', 'partName', 'drawingNo', 'revision', 'catalogNo', 'material', 'generalTolerance', 'aql', 'inspectionLevel'];
+  const productKeys = ['catalogNo', 'partNo', 'partName', 'revision', 'generalTolerance', 'aql', 'inspectionLevel'];
   const actions = `<button type="button" class="btn" data-action="new-report">${esc(t('new_report'))}</button>
     <button type="button" class="btn btn-primary" data-action="go-preview">${esc(t('preview_pdf'))}</button>`;
   $('#main').innerHTML = heading(t('report_kicker'), t('report_title'), t('report_intro'), actions) +
@@ -268,7 +264,7 @@ function renderReport() {
     <aside class="report-side">
       <section class="panel"><div class="panel-head"><h2>${esc(t('section_sampling'))}</h2></div><div class="panel-body">
         <div id="samplingPanel">${samplingPanelHtml(report)}</div>
-        <div class="field-grid two">${['nonconforming', 'accepted', 'rejected'].map(k => headerField(k, report, tpl)).join('')}</div>
+        <div class="field-grid two">${['accepted', 'rejected'].map(k => headerField(k, report, tpl)).join('')}</div>
       </div></section>
       <section class="panel"><div class="panel-body" id="summaryPanel">${summaryHtml(report)}</div>
         <div class="panel-foot"><button type="button" class="btn btn-primary btn-block" data-action="go-preview">${esc(t('preview_pdf'))}</button></div></section>
@@ -576,7 +572,7 @@ function clickAction(action, el) {
       if (!r) return;
       const base = state.templates.find(x => x.id === r.templateId) || activeTemplate();
       startNewReport(base, { carryFrom: r });
-      for (const key of ['customer', 'purchaseOrder', 'productionOrder', 'partNo', 'partName', 'drawingNo', 'revision', 'catalogNo', 'material', 'inspector']) {
+      for (const key of ['customer', 'purchaseOrder', 'productionOrder', 'partNo', 'partName', 'revision', 'catalogNo', 'inspector']) {
         if (!Core.isLocked(base, key) && r.header[key]) state.draft.header[key] = r.header[key];
       }
       persist(); go('report'); return toast(t('toast_report_duplicated'));

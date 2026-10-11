@@ -49,16 +49,13 @@ export const HE = {
   f_catalogNo: 'מספר קטלוגי',
   f_partNo: 'מק"ט',
   f_partName: 'שם החלק',
-  f_drawingNo: 'מספר שרטוט',
   f_revision: 'מהדורה',
-  f_material: 'חומר',
   f_inspector: 'בודק',
   f_generalTolerance: 'טולרנס כללי',
   f_aql: 'AQL',
   f_inspectionLevel: 'רמת בדיקה',
   f_accepted: 'כמות מאושרת',
   f_rejected: 'כמות פסולה',
-  f_nonconforming: 'יחידות פסולות במדגם',
   aql_other: 'אחר (ללא חישוב Ac/Re)',
 
   // sampling panel
@@ -74,11 +71,6 @@ export const HE = {
   arrow_down: 'חץ בטבלה II-A: משתמשים בתוכנית הראשונה מתחת ({letter}).',
   arrow_up: 'חץ בטבלה II-A: משתמשים בתוכנית הראשונה מעל ({letter}).',
   plan_unavailable: 'ל-AQL זה לא מחושבת תוכנית. גודל המדגם לפי טבלה I בלבד; Ac/Re יש לקרוא מהתקן.',
-  disposition: 'הכרעת מנה',
-  disposition_accept: 'מתקבלת',
-  disposition_reject: 'נדחית',
-  disposition_none: 'לא הוערכה',
-  disposition_hint: 'לפי מספר היחידות הפסולות במדגם מול Ac/Re של התוכנית.',
   sampling_basis: 'בדיקה רגילה, דגימה בודדת. {standard} טבלאות I ו-II-A.',
 
   // status pills
@@ -132,7 +124,6 @@ export const HE = {
   warn_quantity_invalid: 'כמות במנה חייבת להיות מספר שלם חיובי.',
   warn_counts_invalid: 'כמויות מאושרות / פסולות חייבות להיות מספרים שלמים.',
   warn_counts_exceed_lot: 'סכום המאושר והפסול גדול מכמות המנה.',
-  warn_nonconforming_exceeds_sample: 'מספר היחידות הפסולות גדול מגודל המדגם.',
   warn_date_invalid: 'תאריך לא תקין.',
   warn_template_problems: 'בתבנית יש שורות עם הגדרה חסרה או שגויה. שורות אלה לא יקבלו תוצאה אוטומטית.',
 

@@ -61,10 +61,6 @@ test('sampling: lot 60 / level II / AQL 2.5 follows the Table II-A arrow to code
   await fill('#h_quantity', '400');
   assert.equal((await page.textContent('.sample-big')).trim(), '50');
   assert.match(await page.textContent('.sample-foot'), /Ac 3 \/ Re 4/);
-  await fill('#h_nonconforming', '4');
-  assert.match(await page.textContent('.dispo'), /נדחית/);
-  await fill('#h_nonconforming', '3');
-  assert.match(await page.textContent('.dispo'), /מתקבלת/);
   await fill('#h_quantity', '5');
   assert.equal((await page.textContent('.sample-big')).trim(), '5');
   assert.match(await page.textContent('#samplingPanel'), /100%/);
@@ -223,7 +219,6 @@ test('PDF: A4 output, file name, page numbering and repeated header on long repo
   await page.goto(url, { waitUntil: 'networkidle' });
   await fill('#h_customer', 'PDF Customer');
   await fill('#h_quantity', '120');
-  await fill('#h_nonconforming', '0');
   await fill('#remarks', 'שלום');
   await setMeasure(0, '24.95', '25.05');
   const id2 = await featureId(2); await page.click(`[data-outcome="pass"][data-id="${id2}"]`);
@@ -241,7 +236,8 @@ test('PDF: A4 output, file name, page numbering and repeated header on long repo
   assert.match(text, /SAMPLE SIZE/);
   assert.match(text, /CODE LETTER/);
   assert.match(text, /\b20\b/, 'sample size 20 for lot 120 level II');
-  assert.match(text, /LOT ACCEPTED/);
+  assert.match(text, /Ac \/ Re/);
+  assert.match(text, /TOL/);
   assert.match(text, /INCOMPLETE/);
   assert.match(text, /Page 1 of 1/);
   assert.match(text, /שלום|םולש/, 'Hebrew remarks survive');

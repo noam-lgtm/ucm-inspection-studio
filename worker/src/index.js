@@ -136,8 +136,8 @@ const EXTRACT_SCHEMA = {
   properties: {
     header: {
       type: 'object', additionalProperties: false,
-      required: ['reportNo', 'partNo', 'revision', 'partName', 'catalogNo', 'customer', 'purchaseOrder', 'productionOrder', 'quantity', 'aql', 'sampleSize', 'accepted', 'rejected', 'generalTolerance', 'inspector', 'inspectionDate', 'drawingNo', 'material'],
-      properties: Object.fromEntries(['reportNo', 'partNo', 'revision', 'partName', 'catalogNo', 'customer', 'purchaseOrder', 'productionOrder', 'quantity', 'aql', 'sampleSize', 'accepted', 'rejected', 'generalTolerance', 'inspector', 'inspectionDate', 'drawingNo', 'material'].map(k => [k, { type: 'string' }])),
+      required: ['reportNo', 'partNo', 'revision', 'partName', 'catalogNo', 'customer', 'purchaseOrder', 'productionOrder', 'quantity', 'aql', 'sampleSize', 'accepted', 'rejected', 'generalTolerance', 'inspector', 'inspectionDate'],
+      properties: Object.fromEntries(['reportNo', 'partNo', 'revision', 'partName', 'catalogNo', 'customer', 'purchaseOrder', 'productionOrder', 'quantity', 'aql', 'sampleSize', 'accepted', 'rejected', 'generalTolerance', 'inspector', 'inspectionDate'].map(k => [k, { type: 'string' }])),
     },
     rows: {
       type: 'array',

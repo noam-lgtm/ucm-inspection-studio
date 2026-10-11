@@ -10,8 +10,8 @@ import { LEVELS } from './sampling.js';
 
 const attr = esc;
 const option = (v, label, sel) => `<option value="${attr(v)}"${sel ? ' selected' : ''}>${esc(label)}</option>`;
-const FIELD_ORDER = ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'drawingNo', 'material', 'generalTolerance', 'aql', 'reportNo', 'inspectionDate', 'inspector', 'purchaseOrder', 'productionOrder', 'quantity', 'sampleSize', 'accepted', 'rejected'];
-const PRODUCT_KEYS = ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'drawingNo', 'material', 'generalTolerance', 'aql'];
+const FIELD_ORDER = ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql', 'reportNo', 'inspectionDate', 'inspector', 'purchaseOrder', 'productionOrder', 'quantity', 'sampleSize', 'accepted', 'rejected'];
+const PRODUCT_KEYS = ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql'];
 
 export function newImportState() {
   return { step: 'pick', fileName: '', fileBlob: null, source: null, draft: null, canvases: [], scale: 2.2, crops: {}, aiStatus: '', aiMessage: '', busy: false, saveReport: true, uploadFile: true, error: '' };

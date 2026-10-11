@@ -50,8 +50,8 @@ export function renderReportSheet(template, report) {
   const company = template.company || {};
   const h = report.header;
   const counts = summarize(report.features, report.results);
-  const { plan, disposition } = reportSampling(report);
-  const status = disposition === 'reject' ? 'fail' : counts.status;
+  const { plan } = reportSampling(report);
+  const status = counts.status;
 
   const rows = report.features.map((f, i) => {
     const r = report.results[f.id] || {};
@@ -60,6 +60,8 @@ export function renderReportSheet(template, report) {
     const unit = f.kind === 'numeric' ? unitLabel(f.unit) : '';
     const isNumeric = f.kind === 'numeric';
     const required = requirementText(f) || dash;
+    const tolMinus = isNumeric && lim && lim.ok ? formatNumber(Math.abs(lim.lower), lim.decimals) + (lim.lower > 0 ? ' (+)' : '') : dash;
+    const tolPlus = isNumeric && lim && lim.ok ? formatNumber(Math.abs(lim.upper), lim.decimals) + (lim.upper < 0 ? ' (\u2212)' : '') : dash;
     const limits = isNumeric ? (limitsText(f) || dash) : (f.kind === 'gauge' ? 'GO / NO-GO' : 'OK / NOT OK');
     let min, max;
     if (isNumeric) { min = measuredCell(f, r.min, lim); max = measuredCell(f, r.max, lim); }
@@ -71,8 +73,9 @@ export function renderReportSheet(template, report) {
     return `<tr>
       <td class="c">${i + 1}</td>
       <td class="req">${esc(required)}${unit ? ` <span class="unit">${esc(unit)}</span>` : ''}${noteLine}</td>
-      <td class="c">${esc(limits)}</td>
       <td>${show(f.method)}</td>
+      <td class="c">${isNumeric ? esc(tolMinus) : ''}</td>
+      <td class="c">${isNumeric ? esc(tolPlus) : esc(limits)}</td>
       ${isNumeric ? `<td class="c num">${min}</td><td class="c num">${max}</td>` : `<td class="c num" colspan="2">${min}</td>`}
       <td class="c">${resultCell(ev.state)}</td>
     </tr>`;
@@ -91,13 +94,8 @@ export function renderReportSheet(template, report) {
   } else {
     samplingCells.push(['CODE LETTER', dash], ['SAMPLE SIZE', dash], ['Ac / Re', dash]);
   }
-  samplingCells.push(['NONCONF. IN SAMPLE', show(h.nonconforming)]);
   samplingCells.push(['ACCEPTED QTY', show(h.accepted)]);
   samplingCells.push(['REJECTED QTY', show(h.rejected)]);
-  const dispositionText = disposition === 'accept' ? '<span class="r-pass">LOT ACCEPTED</span>'
-    : disposition === 'reject' ? '<span class="r-fail">LOT REJECTED</span>' : dash;
-  // 5 x 2 grid: keep each value on one line.
-  samplingCells.push(['LOT DISPOSITION', dispositionText]);
 
   const planNotes = [];
   const standardName = company.standardName || 'MIL-STD-105D';
@@ -107,7 +105,7 @@ export function renderReportSheet(template, report) {
   }
   if (plan && plan.fullInspection && !plan.lotOfOne) planNotes.push('Sample size equals or exceeds the lot size: 100% inspection.');
   if (plan && !plan.plan && !plan.lotOfOne) planNotes.push(`AQL ${h.aql || dash} is outside the plans built into this tool; sample size is shown from Table I only and Ac/Re must be taken from the standard.`);
-  planNotes.push(`Sampling: ${standardName} Tables I and II-A, single sampling, normal inspection. Lot disposition compares nonconforming units found in the sample with Ac/Re.`);
+  planNotes.push(`Sampling: ${standardName} Tables I and II-A, single sampling, normal inspection. Ac/Re are the acceptance and rejection numbers of that plan.`);
 
   const statusBanner = status === 'pass' ? '<span class="rs-status rs-status-pass">PASS – all characteristics within limits</span>'
     : status === 'fail' ? '<span class="rs-status rs-status-fail">FAIL – nonconformance recorded</span>'
@@ -115,8 +113,7 @@ export function renderReportSheet(template, report) {
 
   const headerFacts = [
     ['CUSTOMER', h.customer], ['PURCHASE ORDER', h.purchaseOrder], ['PRODUCTION ORDER', h.productionOrder], ['LOT QUANTITY', h.quantity],
-    ['PART No.', h.partNo], ['PART NAME', h.partName], ['DRAWING No.', h.drawingNo], ['REVISION', h.revision],
-    ['CATALOG No.', h.catalogNo], ['MATERIAL', h.material], ['GENERAL TOLERANCE', h.generalTolerance], ['INSPECTOR', h.inspector],
+    ['CATALOG No.', h.catalogNo], ['PART No.', h.partNo], ['PART NAME', h.partName], ['REVISION', h.revision],
   ];
 
   const runningHeader = `<div class="rs-running"><span>${esc(company.name || '')}</span><span>FINAL INSPECTION REPORT ${esc(h.reportNo || '')}</span><span>${esc(h.partNo ? 'Part ' + h.partNo : '')}</span></div>`;
@@ -128,21 +125,21 @@ export function renderReportSheet(template, report) {
       <div class="rs-title"><h1>FINAL INSPECTION REPORT</h1><div class="rs-no">${show(h.reportNo)}</div><div class="rs-date">${esc(formatDateForReport(h.inspectionDate) || dash)}</div></div>
     </div>
     <div class="rs-facts">${headerFacts.map(([k, v]) => `<div class="rs-fact"><small>${k}</small><b>${show(v)}</b></div>`).join('')}</div>
-    <div class="rs-band">Sampling plan and lot disposition</div>
+    <div class="rs-band">Sampling plan</div>
     <div class="rs-sampling">${samplingCells.map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('')}</div>
     <div class="rs-band">Dimensional and attribute inspection results</div>
     <table class="rs-table">
-      <colgroup><col class="w-no"><col class="w-req"><col class="w-lim"><col class="w-method"><col class="w-min"><col class="w-max"><col class="w-res"></colgroup>
-      <thead><tr><th>No.</th><th>Required</th><th>Limits</th><th>Instrument / method</th><th>Actual min</th><th>Actual max</th><th>Result</th></tr></thead>
+      <colgroup><col class="w-no"><col class="w-req"><col class="w-method"><col class="w-tol"><col class="w-tol"><col class="w-min"><col class="w-max"><col class="w-res"></colgroup>
+      <thead><tr><th>No.</th><th>Required</th><th>Test equip. / method</th><th>TOL&minus;</th><th>TOL+</th><th>Actual min</th><th>Actual max</th><th>Result</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="rs-summary"><div>${statusBanner}</div><div class="rs-counts">Characteristics: ${counts.total} &middot; Pass ${counts.ok} &middot; Fail ${counts.fail} &middot; Review ${counts.review} &middot; Not measured ${counts.empty}</div></div>
     <div class="rs-band">Remarks</div>
     <div class="rs-remarks" dir="auto">${esc(report.remarks || '')}</div>
     <div class="rs-sign">
-      <div><small>INSPECTED BY</small><b>${show(h.inspector)}</b><span class="line"></span><small>Signature / date</small></div>
-      <div><small>QA APPROVAL</small><b>&nbsp;</b><span class="line"></span><small>Name, signature / date</small></div>
-      <div><small>CUSTOMER ACKNOWLEDGEMENT</small><b>&nbsp;</b><span class="line"></span><small>Name, signature / date</small></div>
+      <div><small>NAME</small><b>${show(h.inspector)}</b></div>
+      <div><small>DATE</small><b>${esc(formatDateForReport(h.inspectionDate) || dash)}</b></div>
+      <div><small>SIGNATURE</small><b>&nbsp;</b><span class="line"></span></div>
     </div>
     <div class="rs-notes">${planNotes.map(n => `<div>${esc(n)}</div>`).join('')}</div>
     <div class="rs-footer">${esc(company.name || '')}${company.footer ? ' | ' + esc(company.footer) : ''}</div>

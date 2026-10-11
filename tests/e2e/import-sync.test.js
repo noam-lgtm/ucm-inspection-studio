@@ -164,11 +164,11 @@ test('cross-device: device A imports with sync on; device B sees the product and
   // Device B edits the product; device A receives the change on its next sync
   await b.page.click('[data-tab="products"]');
   await b.page.click('[data-action="product-edit"]');
-  await b.page.fill('input[name="pr:material"]', 'AL 6061-T6');
+  await b.page.fill('input[name="pr:catalogNo"]', 'CAT-SYNC');
   await b.page.waitForFunction(() => Object.keys(window.UCM.state.settings.dirty || {}).length === 0, null, { timeout: 20000 });
   await a.page.click('[data-tab="settings"]');
   await a.page.click('[data-action="sync-now"]');
-  await a.page.waitForFunction(() => window.UCM.state.products[0].material === 'AL 6061-T6', null, { timeout: 20000 });
+  await a.page.waitForFunction(() => window.UCM.state.products[0].catalogNo === 'CAT-SYNC', null, { timeout: 20000 });
   assert.deepEqual(a.page.__errors, []); assert.deepEqual(b.page.__errors, []);
   await a.context.close(); await b.context.close();
 });

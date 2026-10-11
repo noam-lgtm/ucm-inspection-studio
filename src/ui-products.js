@@ -6,7 +6,7 @@ import { LEVELS, SUPPORTED_AQLS } from './sampling.js';
 
 const attr = esc;
 const option = (v, label, sel) => `<option value="${attr(v)}"${sel ? ' selected' : ''}>${esc(label)}</option>`;
-const FIELDS = ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'drawingNo', 'material', 'generalTolerance', 'aql', 'inspectionLevel'];
+const FIELDS = ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql', 'inspectionLevel'];
 
 export function productLabel(p) {
   return [p.partNo, p.revision ? 'Rev ' + p.revision : '', p.partName].filter(Boolean).join(' · ');
@@ -14,7 +14,7 @@ export function productLabel(p) {
 
 export function filterProducts(products, query) {
   const q = String(query || '').trim().toLowerCase();
-  const list = (products || []).filter(p => !q || [p.partNo, p.partName, p.customer, p.catalogNo, p.drawingNo, p.revision].some(v => String(v || '').toLowerCase().includes(q)));
+  const list = (products || []).filter(p => !q || [p.partNo, p.partName, p.customer, p.catalogNo, p.revision].some(v => String(v || '').toLowerCase().includes(q)));
   return list.sort((a, b) => String(a.partNo).localeCompare(String(b.partNo), undefined, { numeric: true }) || String(b.revision).localeCompare(String(a.revision), undefined, { numeric: true }));
 }
 

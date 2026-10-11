@@ -20,10 +20,10 @@
 .rs-fact small { display: block; font-size: 6.8pt; color: #6a7a72; letter-spacing: .4px; }
 .rs-fact b { display: block; font-size: 9.5pt; overflow-wrap: anywhere; }
 .rs-band { margin: 12px 0 0; padding: 4px 8px; background: #e9f0e5; color: #2f5a1d; font-size: 7.8pt; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; }
-.rs-sampling { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid #cdd8cf; border-top: 0; }
+.rs-sampling { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid #cdd8cf; border-top: 0; }
 .rs-sampling > div { padding: 5px 6px; text-align: center; border-right: 1px solid #cdd8cf; border-bottom: 1px solid #cdd8cf; min-height: 32px; }
-.rs-sampling > div:nth-child(5n) { border-right: 0; }
-.rs-sampling > div:nth-last-child(-n+5) { border-bottom: 0; }
+.rs-sampling > div:nth-child(4n) { border-right: 0; }
+.rs-sampling > div:nth-last-child(-n+4) { border-bottom: 0; }
 .rs-sampling small { display: block; font-size: 6.8pt; color: #6a7a72; letter-spacing: .3px; }
 .rs-sampling b { font-size: 10pt; white-space: nowrap; }
 table.rs-table { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 9pt; margin-top: 0; }
@@ -34,7 +34,7 @@ table.rs-table { border-collapse: collapse; width: 100%; table-layout: fixed; fo
 .rs-table td.req { font-weight: 700; }
 .rs-table .unit { font-weight: 400; color: #5a6a62; font-size: 8pt; }
 .rs-rownote { font-weight: 400; font-size: 8pt; color: #5a6a62; }
-.rs-table .w-no { width: 6%; } .rs-table .w-req { width: 26%; } .rs-table .w-lim { width: 15%; } .rs-table .w-method { width: 18%; } .rs-table .w-min { width: 10%; } .rs-table .w-max { width: 10%; } .rs-table .w-res { width: 15%; }
+.rs-table .w-no { width: 6%; } .rs-table .w-req { width: 27%; } .rs-table .w-method { width: 19%; } .rs-table .w-tol { width: 8%; } .rs-table .w-min { width: 10%; } .rs-table .w-max { width: 10%; } .rs-table .w-res { width: 12%; }
 .rs-table thead { display: table-header-group; }
 .rs-table tr { break-inside: avoid; page-break-inside: avoid; }
 .r-pass { color: #1f6b33; font-weight: 800; }

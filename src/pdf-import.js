@@ -27,8 +27,6 @@ const LABELS = {
   partNo: ['part no', 'part number', 'p/n', 'pn', 'מק"ט', 'מקט'],
   partName: ['part name', 'description', 'שם החלק', 'תיאור'],
   revision: ['rev', 'revision', 'rev.', 'מהדורה', 'גרסה'],
-  drawingNo: ['drawing no', 'drawing', 'dwg', 'מספר שרטוט', 'שרטוט'],
-  material: ['material', 'חומר'],
   aql: ['inspect methods', 'inspection method', 'aql'],
   sampleSize: ['sample size', 'גודל מדגם'],
   totalInspected: ['total inspected'],
@@ -296,8 +294,6 @@ export function buildImportDraft(pages) {
   set('partName', val('partName'), header.partName ? 0.85 : 0, header.partName);
   set('catalogNo', val('catalogNo'), header.catalogNo ? 0.9 : 0, header.catalogNo);
   set('customer', val('customer'), header.customer ? 0.85 : 0, header.customer);
-  set('drawingNo', val('drawingNo'), header.drawingNo ? 0.85 : 0, header.drawingNo);
-  set('material', val('material'), header.material ? 0.85 : 0, header.material);
   const tolText = val('generalTolerance').replace(/\+\/-|\+-/, '±');
   set('generalTolerance', tolText, header.generalTolerance ? 0.9 : 0, header.generalTolerance);
   const aqlM = /(\d+(?:[.,]\d+)?)/.exec(val('aql'));
@@ -346,7 +342,7 @@ export function buildImportDraft(pages) {
 /** Turn a confirmed import draft into a product record. */
 export function draftToProduct(draft, overrides = {}) {
   const p = blankProduct();
-  for (const key of ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'drawingNo', 'material', 'generalTolerance', 'aql']) {
+  for (const key of ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql']) {
     p[key] = String((overrides[key] ?? (draft.fields[key] && draft.fields[key].value)) || '').trim();
   }
   p.inspectionLevel = overrides.inspectionLevel || '';

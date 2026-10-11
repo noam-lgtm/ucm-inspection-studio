@@ -6,7 +6,7 @@
 import { blankFeature, blankResult, FEATURE_KINDS, UNITS } from './core.js';
 import { interpretRequirement, interpretResult, parseDateText } from './pdf-import.js';
 
-const HEADER_KEYS = ['reportNo', 'partNo', 'revision', 'partName', 'catalogNo', 'customer', 'purchaseOrder', 'productionOrder', 'quantity', 'aql', 'sampleSize', 'accepted', 'rejected', 'generalTolerance', 'inspector', 'inspectionDate', 'drawingNo', 'material'];
+const HEADER_KEYS = ['reportNo', 'partNo', 'revision', 'partName', 'catalogNo', 'customer', 'purchaseOrder', 'productionOrder', 'quantity', 'aql', 'sampleSize', 'accepted', 'rejected', 'generalTolerance', 'inspector', 'inspectionDate'];
 const clean = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
 
 /** Convert one AI row into a core feature + result. */
