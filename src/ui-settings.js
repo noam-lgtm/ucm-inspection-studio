@@ -26,7 +26,7 @@ export function renderSettings(ctx) {
         <div class="field span2"><label for="syncUrl">${esc(t('sync_url'))}</label><input id="syncUrl" name="st:url" value="${attr(sync.url)}" dir="ltr" placeholder="https://ucm-inspection-sync.<account>.workers.dev" autocomplete="off"></div>
         <div class="field"><label for="syncKey">${esc(t('sync_key'))}</label><input id="syncKey" name="st:key" type="password" value="${attr(sync.key)}" dir="ltr" autocomplete="off"></div>
         <div class="field span2"><label>${esc(t('sync_status'))}</label><div class="hint" id="syncDetail">${esc(sync.lastSyncAt ? t('sync_last', { date: ctx.formatDateTime(sync.lastSyncAt) }) : '')} ${ctx.syncState.testMessage ? ' · ' + esc(ctx.syncState.testMessage) : ''}</div></div>
-        <div class="field"><label>${esc(t('sync_ai'))}</label><div class="hint">${esc(aiLine)}</div></div>
+        <div class="field"><label>${esc(t('sync_ai'))}</label><div class="hint">${esc(aiLine)}</div><small class="hint">${esc(t('sync_ai_hint'))}</small></div>
         <div class="field span2"><label class="toggle"><input type="checkbox" name="st:autoAi" ${s.autoAi !== false ? 'checked' : ''}> ${esc(t('sync_auto_ai'))}</label></div>
         <div class="field span4 page-actions"><button type="button" class="btn" data-action="sync-test">${esc(t('sync_test'))}</button><button type="button" class="btn btn-primary" data-action="sync-now" ${syncConfigured(s) ? '' : 'disabled'}>${esc(t('sync_now'))}</button></div>
         <div class="field span4"><small class="hint">${esc(t('sync_hint'))}</small></div>

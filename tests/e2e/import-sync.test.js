@@ -78,6 +78,12 @@ test('import report A through the UI: 12 rows, product saved, report opened from
   assert.equal(await page.inputValue('input[name="imf:revision"]'), 'C');
   assert.equal(await page.inputValue('input[name="imf:inspectionDate"]'), '2023-09-06');
   assert.ok(await page.$('.im-row img'), 'crops from the PDF are shown');
+  // Keyboard flow: Enter in a nominal field jumps to the next numeric row's nominal (gauge rows skipped)
+  await page.focus('input[name="imr:nominal"][data-i="3"]');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(() => document.activeElement.name + '/' + document.activeElement.dataset.i), 'imr:nominal/5', 'row 5 (thread gauge) is skipped');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.i), '6');
   // Fix the angle row (no tolerance on the form) before saving
   const angleIndex = await page.evaluate(() => window.UCM.ui.import.draft.features.findIndex(f => f.feature.unit === 'deg'));
   await page.fill(`input[name="imr:upper"][data-i="${angleIndex}"]`, '0.5');

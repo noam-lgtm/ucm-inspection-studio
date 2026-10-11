@@ -275,3 +275,8 @@ table.list { width: 100%; border-collapse: collapse; min-width: 760px; }
   .side-nav { flex-wrap: wrap; }
   .nav-btn { flex: 1 1 30%; }
 }
+
+/* enlarge the PDF crop of the row being edited */
+.im-row .im-crop img:first-child { transition: transform .12s; transform-origin: top right; }
+.im-row:focus-within .im-crop img:first-child { transform: scale(2.2); position: relative; z-index: 15; box-shadow: var(--shadow); background: #fff; }
+.im-row:focus-within { position: relative; z-index: 5; }

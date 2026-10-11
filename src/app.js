@@ -5,7 +5,7 @@ import { t } from './i18n.js';
 import * as Store from './storage.js';
 import { renderReportSheet, escapeHtml, reportFileName } from './report-sheet.js';
 import * as Sync from './sync.js';
-import { renderImport, onImportInput, onImportChange, onImportAction, startImport, newImportState } from './ui-import.js';
+import { renderImport, onImportInput, onImportChange, onImportAction, onImportKeydown, startImport, newImportState } from './ui-import.js';
 import { renderProducts, onProductsInput, onProductsAction, filterProducts, productLabel } from './ui-products.js';
 import { renderSettings, onSettingsInput, onSettingsAction, syncStatusText } from './ui-settings.js';
 
@@ -810,6 +810,7 @@ function onClick(event) {
 }
 
 function onKeydown(event) {
+  if (ui.tab === 'import') { onImportKeydown(ctx, event); return; }
   if (event.key !== 'Enter' || ui.tab !== 'report') return;
   const el = event.target;
   if (!(el instanceof HTMLInputElement) || !el.dataset.measure) return;

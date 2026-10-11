@@ -127,6 +127,7 @@ function rowEditor(ctx, f, i) {
 export function renderImport(ctx) {
   const im = ctx.ui.import;
   const head = ctx.heading(t('import_kicker'), t('import_title'), t('import_intro'), `<button type="button" class="btn" data-action="go-products">${esc(t('back_to_report'))}</button>`);
+  const keysHint = `<div class="hint-line">${esc(t('import_keys_hint'))}</div>`;
   if (im.step === 'pick' || im.step === 'reading') {
     return head + `${im.error ? `<div class="alert alert-fail">${esc(im.error)}</div>` : ''}
       <div class="drop-zone${im.busy ? ' busy' : ''}" id="dropZone"><p>${esc(im.busy ? t('import_reading') : t('import_drop'))}</p>
@@ -148,7 +149,7 @@ export function renderImport(ctx) {
   const aiButton = ctx.aiAvailable()
     ? `<button type="button" class="btn" data-action="im-run-ai" ${im.busy ? 'disabled' : ''}>${esc(t('import_ai_button'))}</button>`
     : `<span class="hint">${esc(t('import_ai_unavailable'))}</span>`;
-  return head + `<div class="alert alert-ok">${esc(t('import_summary', { rows: d.summary.rows, review: d.summary.reviewRows }))} ${esc(im.fileName)}</div>
+  return head + `<div class="alert alert-ok">${esc(t('import_summary', { rows: d.summary.rows, review: d.summary.reviewRows }))} ${esc(im.fileName)}</div>${keysHint}
     ${notices.map(([c, m]) => `<div class="alert alert-${c}">${esc(m)}</div>`).join('')}
     <section class="panel"><div class="panel-head"><div><h2>${esc(t('import_fields'))}</h2><p>${esc(t('import_review_intro'))}</p></div><div class="compact-actions">${aiButton}</div></div>
       <div class="panel-body field-grid">${FIELD_ORDER.map(k => fieldRow(ctx, k, fields[k] || { value: '', confidence: 0, needsReview: false })).join('')}
@@ -202,6 +203,32 @@ export function onImportInput(ctx, el) {
   if (name === 'im:saveReport') { im.saveReport = el.checked; return true; }
   if (name === 'im:uploadFile') { im.uploadFile = el.checked; return true; }
   return false;
+}
+
+/** Enter moves to the next useful field: nominal -> next numeric row's nominal; other fields -> next field in the row. */
+export function onImportKeydown(ctx, event) {
+  if (event.key !== 'Enter') return false;
+  const el = event.target;
+  if (!(el instanceof HTMLInputElement) || !String(el.name || '').startsWith('imr:')) return false;
+  event.preventDefault();
+  const field = el.name.slice(4);
+  const i = Number(el.dataset.i);
+  const rows = ctx.ui.import.draft.features;
+  let target = null;
+  if (field === 'nominal' || field === 'label' && rows[i].feature.kind !== 'numeric') {
+    for (let j = i + 1; j < rows.length && !target; j++) {
+      // numeric rows: the nominal; attribute rows only when their description is still empty
+      const numeric = rows[j].feature.kind === 'numeric';
+      if (!numeric && String(rows[j].feature.label || '').trim()) continue;
+      target = document.querySelector(`input[name="imr:${numeric ? 'nominal' : 'label'}"][data-i="${j}"]`);
+    }
+  } else {
+    const inputs = Array.from(document.querySelectorAll(`[data-im-row="${i}"] input, [data-im-row="${i}"] select`)).filter(x => !x.disabled && !x.hidden);
+    const k = inputs.indexOf(el);
+    target = inputs[k + 1] || document.querySelector(`[data-im-row="${i + 1}"] input`);
+  }
+  if (target) { target.focus(); if (target.select) target.select(); }
+  return true;
 }
 
 export function onImportChange(ctx, el) {
