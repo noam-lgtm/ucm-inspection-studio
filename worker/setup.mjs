@@ -10,6 +10,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
+import readline from 'node:readline/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -54,7 +55,16 @@ try {
   step('מפתח גישה');
   const keyFile = path.join(here, '.workspace-key');
   let key = fs.existsSync(keyFile) ? fs.readFileSync(keyFile, 'utf8').trim() : '';
-  if (!key) { key = randomBytes(24).toString('hex'); fs.writeFileSync(keyFile, key + '\n', { mode: 0o600 }); }
+  const argKey = (process.argv.find(a => a.startsWith('--key=')) || '').slice(6);
+  if (argKey) key = argKey;
+  if (!key) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const typed = (await rl.question('בחרו סיסמת כניסה לחברה (לפחות 16 תווים, Enter = סיסמה אקראית): ')).trim();
+    rl.close();
+    key = typed || randomBytes(12).toString('hex');
+  }
+  if (key.length < 16) throw new Error('הסיסמה חייבת להכיל לפחות 16 תווים');
+  fs.writeFileSync(keyFile, key + '\n', { mode: 0o600 });
   run(['secret', 'put', 'WORKSPACE_KEY'], { input: key + '\n', quiet: true });
 
   step('פריסה');
@@ -66,6 +76,8 @@ try {
   console.log('כתובת שרת הסנכרון: ' + url);
   console.log('מפתח גישה:         ' + key);
   console.log('(המפתח שמור גם בקובץ worker/.workspace-key – אל תעלו אותו ל-GitHub)');
+  console.log('\nכדי שהאתר ידרוש את המפתח בכניסה, ערכו ב-GitHub את הקובץ src/config.js ושימו:');
+  console.log(`  syncUrl: '${url}',`);
   console.log('==================================================\n');
 } catch (error) {
   console.error('\nשגיאה: ' + error.message);
