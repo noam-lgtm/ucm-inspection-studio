@@ -34,7 +34,7 @@ Rejected: Tesseract.js in the browser. It is free and offline, but the hard case
 
 AI cost: a two-page report is ~6k input tokens and ~2k output tokens; with Claude Opus 5.5 that is about $0.07 per report, so 100 imports/month ≈ $7. Claude Haiku 5.5 would be ≈ $0.01 per report at lower reading quality; the model is a one-line setting on the Worker.
 
-The app stays **local-first**: everything is saved in the browser immediately and works offline; the sync server is an add-on. Sync is last-write-wins by record (products, templates, archived reports). The Worker writes a full JSON snapshot to R2 every night and keeps 60 of them.
+The app stays **local-first**: everything is saved in the browser immediately and works offline; the sync server is an add-on. Sync is last-write-wins by record (products, archived reports). The Worker writes a full JSON snapshot to R2 every night and keeps 60 of them.
 
 ### Original PDFs
 
@@ -45,6 +45,7 @@ Kept. They are uploaded to R2 (25 MB limit per file, 10 GB free) and linked from
 * `partNo + revision` is the product key (normalised: trimmed, upper-cased, `Rev.` prefix removed). The same part with a new revision is a new product; the previous one stays.
 * The report number (`9515_2`) is stored on the archived report and as `sourceReportNo` on the product. It never identifies the product.
 * Re-importing the same part/revision updates the product's characteristics (confirmed in the review screen) and adds another historical report.
+* After saving, the imported report (header values and measured results) becomes the current report, so printing it reproduces the original; the next lot starts with "new report", which keeps the product data and the inspector's name and clears the lot data.
 
 ## Setting up the sync server (one time, ~15 minutes)
 

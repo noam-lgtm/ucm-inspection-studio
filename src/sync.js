@@ -4,10 +4,10 @@
  * sync server and pulls records changed elsewhere. Conflicts resolve by the
  * newer updatedAt (last write wins), which is adequate for a small team.
  *
- * Record kinds: product | template | report (archived reports). Drafts are not synced.
+ * Record kinds: product | report (archived reports). Drafts are not synced.
  */
 
-export const KINDS = Object.freeze(['product', 'template', 'report']);
+export const KINDS = Object.freeze(['product', 'report']);
 
 export function syncConfigured(settings) {
   const s = settings && settings.sync;
@@ -15,9 +15,7 @@ export function syncConfigured(settings) {
 }
 
 function listOf(state, kind) {
-  if (kind === 'product') return state.products;
-  if (kind === 'template') return state.templates;
-  return state.archive;
+  return kind === 'product' ? state.products : state.archive;
 }
 
 /** Mark a record as needing a push. Call after any local modification. */

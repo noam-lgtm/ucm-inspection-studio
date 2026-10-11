@@ -6,15 +6,16 @@ import { mergeAiIntoDraft } from './ai-merge.js';
 import { loadPdf, loadImage, renderPage, cropDataUrl, pageJpegBase64 } from './pdf-render.js';
 import { aiExtract, uploadFile, syncConfigured } from './sync.js';
 import { escapeHtml as esc } from './report-sheet.js';
-import { LEVELS } from './sampling.js';
+import { featureFields, featurePreviewHtml } from './ui-products.js';
 
 const attr = esc;
 const option = (v, label, sel) => `<option value="${attr(v)}"${sel ? ' selected' : ''}>${esc(label)}</option>`;
 const FIELD_ORDER = ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql', 'reportNo', 'inspectionDate', 'inspector', 'purchaseOrder', 'productionOrder', 'quantity', 'sampleSize', 'totalInspected', 'accepted', 'rejected'];
 const PRODUCT_KEYS = ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql'];
+const REPORT_KEYS = ['reportNo', 'inspectionDate', 'inspector', 'purchaseOrder', 'productionOrder', 'quantity', 'totalInspected', 'accepted', 'rejected', 'customer'];
 
 export function newImportState() {
-  return { step: 'pick', fileName: '', fileBlob: null, source: null, draft: null, canvases: [], scale: 2.2, crops: {}, aiStatus: '', aiMessage: '', busy: false, saveReport: true, uploadFile: true, error: '' };
+  return { step: 'pick', fileName: '', fileBlob: null, source: null, draft: null, canvases: [], scale: 2.2, crops: {}, aiStatus: '', aiMessage: '', busy: false, error: '' };
 }
 
 function confBadge(c) {
@@ -75,16 +76,16 @@ export async function runAi(ctx) {
   im.busy = false; ctx.render();
 }
 
+/** One header field: label line (label, confidence, crop of the PDF at the far end) above the input. */
 function fieldRow(ctx, key, f) {
   const crop = ctx.ui.import.crops['field:' + key];
-  const label = key === 'sampleSize' ? t('f_sampleSize') : t('f_' + key);
+  const label = t('f_' + key);
   let control;
-  if (key === 'aql') {
-    control = `<input name="imf:aql" value="${attr(f.value)}" dir="ltr" inputmode="decimal">`;
-  } else if (key === 'inspectionDate') control = `<input name="imf:inspectionDate" type="date" value="${attr(f.value)}">`;
+  if (key === 'aql') control = `<input name="imf:aql" value="${attr(f.value)}" dir="ltr" inputmode="decimal">`;
+  else if (key === 'inspectionDate') control = `<input name="imf:inspectionDate" type="date" value="${attr(f.value)}">`;
   else control = `<input name="imf:${attr(key)}" value="${attr(f.value)}" dir="auto">`;
   const alt = f.aiValue ? `<div class="im-alt">${esc(t('import_ai_suggest', { v: f.aiValue }))} <button type="button" class="btn btn-small" data-action="im-use-ai-field" data-key="${attr(key)}">${esc(t('import_use_ai'))}</button></div>` : '';
-  return `<div class="field im-field${f.needsReview ? ' needs' : ''}"><label>${esc(label)} ${f.value ? confBadge(f.confidence) : ''}</label>${control}${crop ? `<img class="im-crop-small" src="${crop}" alt="">` : ''}${alt}</div>`;
+  return `<div class="field im-field${f.needsReview ? ' needs' : ''}"><label><span>${esc(label)}</span> ${f.value ? confBadge(f.confidence) : ''}${crop ? `<img class="im-crop-small" src="${crop}" alt="${attr(t('import_row_image'))}">` : ''}</label>${control}${alt}</div>`;
 }
 
 function rowEditor(ctx, f, i) {
@@ -92,33 +93,17 @@ function rowEditor(ctx, f, i) {
   const feat = f.feature;
   const numeric = feat.kind === 'numeric';
   const crops = im.crops[f.no] || {};
-  const kindSel = `<select name="imr:kind" data-i="${i}">${option('numeric', t('kind_numeric'), numeric)}${option('gauge', t('kind_gauge'), feat.kind === 'gauge')}${option('visual', t('kind_visual'), feat.kind === 'visual')}</select>`;
-  const tolSel = `<select name="imr:symmetric" data-i="${i}">${option('1', t('tol_type_sym'), feat.symmetric)}${option('0', t('tol_type_asym'), !feat.symmetric)}</select>`;
-  const unitSel = `<select name="imr:unit" data-i="${i}">${['mm', 'in', 'deg', 'um', ''].map(u => option(u, t('unit_' + (u || 'none')), feat.unit === u)).join('')}</select>`;
   const inp = (name, value, extra = '') => `<input name="imr:${name}" data-i="${i}" value="${attr(value)}" ${extra}>`;
-  const numericFields = numeric ? `
-      <div class="fe-field"><label>${esc(t('feat_nominal'))}</label>${inp('nominal', feat.nominal, 'dir="ltr" inputmode="decimal"')}</div>
-      <div class="fe-field fe-tol"><label>${esc(t('feat_tol'))}</label>${tolSel}</div>
-      <div class="fe-field"><label>${esc(feat.symmetric ? '±' : t('feat_upper'))}</label>${inp('upper', feat.upper, 'dir="ltr" inputmode="decimal"')}</div>
-      <div class="fe-field${feat.symmetric ? ' hidden' : ''}"><label>${esc(t('feat_lower'))}</label>${inp('lower', feat.lower, 'dir="ltr" inputmode="decimal"')}</div>
-      <div class="fe-field"><label>${esc(t('feat_unit'))}</label>${unitSel}</div>
-      <div class="fe-field"><label>${esc('סיומת')}</label>${inp('suffix', feat.suffix, 'dir="ltr"')}</div>` : '';
+  const sel = (name, options, value) => `<select name="imr:${name}" data-i="${i}">${options.map(([v, l]) => option(v, l, v === value)).join('')}</select>`;
   const results = numeric
     ? `<div class="fe-field"><label>${esc(t('col_min'))}</label>${inp('min', f.result.min, 'dir="ltr" inputmode="decimal"')}</div><div class="fe-field"><label>${esc(t('col_max'))}</label>${inp('max', f.result.max, 'dir="ltr" inputmode="decimal"')}</div>`
-    : `<div class="fe-field"><label>${esc(t('col_result'))}</label><select name="imr:outcome" data-i="${i}">${option('', '—', !f.result.outcome)}${option('pass', feat.kind === 'gauge' ? 'GO' : t('pass'), f.result.outcome === 'pass')}${option('fail', feat.kind === 'gauge' ? 'NO-GO' : t('fail'), f.result.outcome === 'fail')}</select></div>`;
+    : `<div class="fe-field"><label>${esc(t('col_result'))}</label>${sel('outcome', [['', '—'], ['pass', 'GO'], ['fail', 'NO-GO']], f.result.outcome || '')}</div>`;
   const alt = f.aiAlternative ? `<div class="im-alt">${esc(t('import_ai_suggest', { v: Core.requirementText(f.aiAlternative) }))} <button type="button" class="btn btn-small" data-action="im-use-ai-row" data-i="${i}">${esc(t('import_use_ai'))}</button></div>` : '';
   const problems = Core.featureProblems(feat);
   return `<div class="fe-row im-row${f.needsReview ? ' needs' : ''}${problems.length ? ' has-problem' : ''}" data-im-row="${i}">
     <div class="fe-index">${f.no}</div>
-    <div class="fe-grid">
-      <div class="fe-field fe-kind"><label>${esc(t('feat_kind'))}</label>${kindSel}</div>
-      <div class="fe-field fe-label"><label>${esc(t('feat_label'))}</label>${inp('label', feat.label, 'dir="auto"')}</div>
-      ${numericFields}
-      <div class="fe-field fe-method"><label>${esc(t('feat_method'))}</label>${inp('method', feat.method, 'dir="auto"')}</div>
-      ${results}
-    </div>
-    <div class="fe-preview" dir="ltr"><span class="fe-preview-label">${esc(t('feat_preview'))}:</span> <span class="fe-preview-text">${esc(Core.requirementText(feat) || '—')} ${esc(Core.unitLabel(feat.unit))} <span class="muted">(${esc(Core.limitsText(feat) || '—')})</span></span>
-      ${confBadge(f.confidence)} <span class="im-reasons">${esc(reasonsText(f.reasons))}</span>${f.feature.note ? `<span class="im-reasons">· ${esc(f.feature.note)}</span>` : ''}${alt}</div>
+    <div class="fe-grid">${featureFields(feat, inp, sel)}${results}</div>
+    <div class="fe-preview" dir="ltr">${featurePreviewHtml(feat)} ${confBadge(f.confidence)} <span class="im-reasons">${esc(reasonsText(f.reasons))}</span>${feat.note ? `<span class="im-reasons">· ${esc(feat.note)}</span>` : ''}${alt}</div>
     <div class="im-crop">${crops.required ? `<img src="${crops.required}" alt="${attr(t('import_row_image'))}" title="${attr(t('import_row_image'))}">` : ''}${crops.row ? `<details><summary>${esc(t('import_show_row'))}</summary><img class="im-crop-row" src="${crops.row}" alt=""></details>` : ''}</div>
     <div class="fe-tools"><button type="button" class="btn btn-icon btn-danger" data-action="im-delete-row" data-i="${i}" title="${attr(t('import_delete_row'))}" aria-label="${attr(t('import_delete_row'))}">&times;</button></div>
   </div>`;
@@ -126,8 +111,7 @@ function rowEditor(ctx, f, i) {
 
 export function renderImport(ctx) {
   const im = ctx.ui.import;
-  const head = ctx.heading(t('import_kicker'), t('import_title'), t('import_intro'), `<button type="button" class="btn" data-action="go-products">${esc(t('back_to_report'))}</button>`);
-  const keysHint = `<div class="hint-line">${esc(t('import_keys_hint'))}</div>`;
+  const head = ctx.heading(t('import_kicker'), t('import_title'), t('import_intro'), `<button type="button" class="btn" data-action="im-cancel">${esc(t('import_cancel'))}</button>`);
   if (im.step === 'pick' || im.step === 'reading') {
     return head + `${im.error ? `<div class="alert alert-fail">${esc(im.error)}</div>` : ''}
       <div class="drop-zone${im.busy ? ' busy' : ''}" id="dropZone"><p>${esc(im.busy ? t('import_reading') : t('import_drop'))}</p>
@@ -146,35 +130,28 @@ export function renderImport(ctx) {
   if (d.missingPages) notices.push(['warn', t('import_missing_pages', { expected: d.expectedPages, got: d.pageCount })]);
   if (im.aiMessage) notices.push([im.aiStatus === 'failed' ? 'fail' : 'ok', im.aiMessage]);
   if (d.features.some(f => Core.featureProblems(f.feature).length)) notices.push(['warn', t('import_rows_with_problems')]);
-  const aiButton = ctx.aiAvailable()
-    ? `<button type="button" class="btn" data-action="im-run-ai" ${im.busy ? 'disabled' : ''}>${esc(t('import_ai_button'))}</button>`
-    : `<span class="hint">${esc(t('import_ai_unavailable'))}</span>`;
-  return head + `<div class="alert alert-ok">${esc(t('import_summary', { rows: d.summary.rows, review: d.summary.reviewRows }))} ${esc(im.fileName)}</div>${keysHint}
+  const aiButton = ctx.aiAvailable() ? `<button type="button" class="btn" data-action="im-run-ai" ${im.busy ? 'disabled' : ''}>${esc(t('import_ai_button'))}</button>` : '';
+  const canSave = partNo && rev && !im.busy;
+  const saveButtons = `<button type="button" class="btn btn-primary" data-action="im-save" data-then="report" ${canSave ? '' : 'disabled'}>${esc(t('import_confirm_and_report'))}</button>
+    <button type="button" class="btn" data-action="im-save" data-then="products" ${canSave ? '' : 'disabled'}>${esc(t('import_confirm'))}</button>`;
+  return head + `<div class="alert alert-ok">${esc(t('import_summary', { rows: d.summary.rows, review: d.summary.reviewRows }))} ${esc(im.fileName)}</div>
+    <div class="hint-line">${esc(t('import_keys_hint'))}</div>
     ${notices.map(([c, m]) => `<div class="alert alert-${c}">${esc(m)}</div>`).join('')}
-    <section class="panel"><div class="panel-head"><div><h2>${esc(t('import_fields'))}</h2><p>${esc(t('import_review_intro'))}</p></div><div class="compact-actions">${aiButton}</div></div>
-      <div class="panel-body field-grid">${FIELD_ORDER.map(k => fieldRow(ctx, k, fields[k] || { value: '', confidence: 0, needsReview: false })).join('')}
-      <div class="field"><label>${esc(t('f_inspectionLevel'))}</label><select name="imf:inspectionLevel">${option('', '—', !im.inspectionLevel)}${LEVELS.map(l => option(l, t('level_label')[l] || l, im.inspectionLevel === l)).join('')}</select></div></div></section>
+    <section class="panel"><div class="panel-head"><div><h2>${esc(t('import_fields'))}</h2></div><div class="compact-actions">${aiButton}</div></div>
+      <div class="panel-body field-grid">${FIELD_ORDER.map(k => fieldRow(ctx, k, fields[k] || { value: '', confidence: 0, needsReview: false })).join('')}</div></section>
     <section class="panel"><div class="panel-head"><h2>${esc(t('import_rows'))}</h2><span class="pill pill-empty">${d.features.length} ${esc(t('rows'))}</span></div>
       <div class="fe-list">${d.features.map((f, i) => rowEditor(ctx, f, i)).join('')}</div>
       <div class="panel-foot"><button type="button" class="btn" data-action="im-add-row">+ ${esc(t('import_add_row'))}</button></div></section>
-    <section class="panel"><div class="panel-body">${productNote}
-      <label class="toggle"><input type="checkbox" name="im:saveReport" ${im.saveReport ? 'checked' : ''}> ${esc(t('import_save_report'))}</label>
-      ${syncConfigured(ctx.state.settings) ? `<label class="toggle"><input type="checkbox" name="im:uploadFile" ${im.uploadFile ? 'checked' : ''}> ${esc(t('import_upload_file'))}</label>` : ''}
-      <div class="page-actions" style="margin-top:14px">
-        <button type="button" class="btn btn-primary" data-action="im-save" data-then="report" ${!partNo || !rev || im.busy ? 'disabled' : ''}>${esc(t('import_confirm_and_report'))}</button>
-        <button type="button" class="btn" data-action="im-save" data-then="products" ${!partNo || !rev || im.busy ? 'disabled' : ''}>${esc(t('import_confirm'))}</button>
-        <button type="button" class="btn" data-action="im-cancel">${esc(t('import_cancel'))}</button></div></div></section>`;
+    <section class="panel"><div class="panel-body">${productNote}<div class="page-actions">${saveButtons}<button type="button" class="btn" data-action="im-cancel">${esc(t('import_cancel'))}</button></div></div></section>`;
 }
 
 function refreshRowPreview(ctx, i) {
   const f = ctx.ui.import.draft.features[i];
   const row = document.querySelector(`[data-im-row="${i}"]`);
   if (!row || !f) return;
-  const feat = f.feature;
-  const problems = Core.featureProblems(feat);
-  row.classList.toggle('has-problem', problems.length > 0);
+  row.classList.toggle('has-problem', Core.featureProblems(f.feature).length > 0);
   const prev = row.querySelector('.fe-preview-text');
-  if (prev) prev.innerHTML = `${esc(Core.requirementText(feat) || '—')} ${esc(Core.unitLabel(feat.unit))} <span class="muted">(${esc(Core.limitsText(feat) || '—')})</span>`;
+  if (prev) prev.innerHTML = `${esc(Core.requirementText(f.feature) || '—')} <span class="muted">(${esc(Core.limitsText(f.feature) || '—')})</span>`;
 }
 
 export function onImportInput(ctx, el) {
@@ -183,7 +160,6 @@ export function onImportInput(ctx, el) {
   if (!im.draft) return false;
   if (name.startsWith('imf:')) {
     const key = name.slice(4);
-    if (key === 'inspectionLevel') { im.inspectionLevel = el.value; return true; }
     const f = im.draft.fields[key] || (im.draft.fields[key] = { value: '', confidence: 0, needsReview: false });
     f.value = el.value; f.confidence = 1; f.needsReview = false; f.conflict = false;
     if (key === 'partNo' || key === 'revision') ctx.renderSoon();
@@ -200,8 +176,6 @@ export function onImportInput(ctx, el) {
     refreshRowPreview(ctx, i);
     return true;
   }
-  if (name === 'im:saveReport') { im.saveReport = el.checked; return true; }
-  if (name === 'im:uploadFile') { im.uploadFile = el.checked; return true; }
   return false;
 }
 
@@ -241,7 +215,7 @@ export async function onImportAction(ctx, action, el) {
   switch (action) {
     case 'im-choose': document.getElementById('importPdf').click(); return true;
     case 'im-run-ai': await runAi(ctx); return true;
-    case 'im-cancel': ctx.ui.import = newImportState(); ctx.go('products'); return true;
+    case 'im-cancel': ctx.ui.import = newImportState(); ctx.go(ctx.state.products.length ? 'products' : 'report'); return true;
     case 'im-add-row': {
       const no = im.draft.features.length ? Math.max(...im.draft.features.map(f => f.no)) + 1 : 1;
       im.draft.features.push({ no, feature: Core.blankFeature('numeric'), result: Core.blankResult(), confidence: 1, reasons: [], needsReview: false, source: null, raw: {} });
@@ -255,53 +229,44 @@ export async function onImportAction(ctx, action, el) {
   }
 }
 
+/** Save: the product (new or updated by part number + revision), the historical report in the archive, and the original file on the sync server. */
 async function saveImport(ctx, then) {
   const im = ctx.ui.import;
   const d = im.draft;
   const state = ctx.state;
-  const overrides = { inspectionLevel: im.inspectionLevel || '' };
-  const product = draftToProduct(d, overrides);
+  const product = draftToProduct(d);
   if (!product.partNo || !product.revision) return;
   const existing = Core.findProduct(state.products, product.partNo, product.revision);
   const now = new Date().toISOString();
   let saved;
   if (existing) {
-    saved = { ...existing, ...Object.fromEntries(PRODUCT_KEYS.map(k => [k, product[k]])), inspectionLevel: product.inspectionLevel || existing.inspectionLevel, features: product.features, sourceReportNo: product.sourceReportNo || existing.sourceReportNo, updatedAt: now };
+    saved = { ...existing, ...Object.fromEntries(PRODUCT_KEYS.map(k => [k, product[k]])), features: product.features, sourceReportNo: product.sourceReportNo || existing.sourceReportNo, updatedAt: now };
     state.products[state.products.indexOf(existing)] = saved;
   } else {
     saved = { ...product, createdAt: now, updatedAt: now };
     state.products.push(saved);
   }
-  // Original file: upload when configured, keep the id on the product
   let fileId = '';
-  if (im.fileBlob && im.uploadFile && syncConfigured(state.settings)) {
+  if (im.fileBlob && syncConfigured(state.settings)) {
     fileId = `${Core.normalizePartNo(product.partNo)}_${Core.normalizeRevision(product.revision)}_${Date.now()}`.replace(/[^\w.-]/g, '_') + (im.fileBlob.type === 'application/pdf' ? '.pdf' : '.img');
-    try { await uploadFile(state.settings, fileId, im.fileBlob); saved.sourceFileId = fileId; ctx.toast(t('import_file_uploaded')); }
+    try { await uploadFile(state.settings, fileId, im.fileBlob); saved.sourceFileId = fileId; }
     catch (_) { fileId = ''; ctx.toast(t('import_file_upload_failed')); }
   }
   ctx.markDirty('product', saved.id);
-  // Historical report into the archive
-  if (im.saveReport) {
-    const tpl = ctx.activeTemplate();
-    const report = Core.createReport(tpl, null, new Date(), saved);
-    for (const key of ['reportNo', 'inspectionDate', 'inspector', 'purchaseOrder', 'productionOrder', 'quantity', 'totalInspected', 'accepted', 'rejected', 'customer']) {
-      if (d.fields[key] && d.fields[key].value) report.header[key] = d.fields[key].value;
-    }
-    report.features = d.features.map(f => ({ ...f.feature }));
-    report.results = {};
-    d.features.forEach(f => { report.results[f.feature.id] = { ...Core.blankResult(), ...f.result }; });
-    report.remarks = `Imported from ${im.fileName}` + (d.aiNotes ? ` · ${d.aiNotes}` : '');
-    report.baseline = { ...report.header };
-    report.sourceFileId = fileId;
-    report.createdAt = (d.fields.inspectionDate && d.fields.inspectionDate.value ? d.fields.inspectionDate.value + 'T12:00:00.000Z' : now);
-    report.updatedAt = now;
-    state.archive = [report, ...state.archive].slice(0, 500);
-    ctx.markDirty('report', report.id);
-    ctx.toast(t('import_report_saved'));
-  }
+  const report = Core.createReport(saved, null, new Date());
+  for (const key of REPORT_KEYS) if (d.fields[key] && d.fields[key].value) report.header[key] = d.fields[key].value;
+  report.features = d.features.map(f => ({ ...f.feature }));
+  report.results = {};
+  d.features.forEach(f => { report.results[f.feature.id] = { ...Core.blankResult(), ...f.result }; });
+  report.baseline = { ...report.header };
+  report.sourceFileId = fileId;
+  report.createdAt = (d.fields.inspectionDate && d.fields.inspectionDate.value ? d.fields.inspectionDate.value + 'T12:00:00.000Z' : now);
+  report.updatedAt = now;
+  state.archive = [report, ...state.archive].slice(0, 500);
+  ctx.markDirty('report', report.id);
   ctx.persist();
   ctx.toast(t('import_saved', { key: Core.productKey(saved.partNo, saved.revision) }));
   ctx.ui.import = newImportState();
-  if (then === 'report') { ctx.startNewReportForProduct(saved); ctx.go('report'); }
+  if (then === 'report') { ctx.openReport(report); ctx.go('report'); }
   else { ctx.ui.editProductId = saved.id; ctx.go('products'); }
 }

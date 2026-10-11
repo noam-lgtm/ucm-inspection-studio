@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; manifest-src 'self'; worker-src 'self'; connect-src 'self' https: http://127.0.0.1:* http://localhost:*; base-uri 'none'; form-action 'none'">
   <meta name="color-scheme" content="light">
-  <meta name="description" content="Final Inspection Report generator for CNC manufacturing. Runs entirely in the browser; data stays on this computer.">
+  <meta name="description" content="Final Inspection Report generator for CNC manufacturing.">
   <meta name="theme-color" content="#2f5a1d">
   <title>UCM Inspection Studio</title>
   <link rel="manifest" href="manifest.webmanifest">
@@ -31,22 +31,12 @@
           <button type="button" class="nav-btn active" data-tab="report"><span class="nav-num">01</span><span data-t="nav_report"></span></button>
           <button type="button" class="nav-btn" data-tab="products"><span class="nav-num">02</span><span data-t="nav_products"></span></button>
           <button type="button" class="nav-btn" data-tab="archive"><span class="nav-num">03</span><span data-t="nav_archive"></span></button>
-          <button type="button" class="nav-btn" data-tab="templates"><span class="nav-num">04</span><span data-t="nav_templates"></span></button>
-          <button type="button" class="nav-btn" data-tab="preview"><span class="nav-num">05</span><span data-t="nav_preview"></span></button>
-          <button type="button" class="nav-btn" data-tab="settings"><span class="nav-num">06</span><span data-t="nav_settings"></span></button>
+          <button type="button" class="nav-btn" data-tab="settings"><span class="nav-num">04</span><span data-t="nav_settings"></span></button>
         </nav>
-        <div class="side-block" id="sidebarTemplate"></div>
-        <div class="side-block side-backup">
-          <strong data-t="backup"></strong>
-          <p class="side-note" id="backupStatus"></p>
-          <button type="button" class="btn btn-small btn-block" data-action="export-backup" data-t="export_backup"></button>
-          <button type="button" class="btn btn-small btn-block" data-action="import-backup" data-t="import_backup"></button>
-          <input type="file" id="importFile" accept="application/json,.json" hidden>
-          <p class="side-note" data-t="backup_hint"></p>
-        </div>
       </aside>
       <main id="main" class="main"></main>
     </div>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <dialog id="helpDialog" class="help">
       <form method="dialog">
@@ -68,6 +58,7 @@
       <p class="lock-error" id="lockError" role="alert"></p>
     </form>
   </div>
+  <div id="measureSheet" class="measure-host" aria-hidden="true"></div>
   <div id="printSheet" class="print-only" aria-hidden="true"></div>
   <script type="module" src="src/app.js"></script>
 </body>

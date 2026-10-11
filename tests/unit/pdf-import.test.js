@@ -34,17 +34,17 @@ test('real report MM606207C rev C: header and all 12 rows are recovered from the
   assert.deepEqual(draft.features.map(f => f.no), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   const rows = draft.features.map(f => [requirementText(f.feature), f.feature.kind, f.feature.method, f.result.min, f.result.max, f.result.outcome]);
   assert.deepEqual(rows, [
-    ['4.33 ±0.10 x 60°', 'numeric', 'Comperator', '4.24', '4.38', ''],
-    ['Ø 30.0 ±0.1', 'numeric', 'Caliper', '29.95', '30.04', ''],
-    ['R 26.0 ±0.1', 'numeric', 'XYZ cmm', '25.97', '25.99', ''],
-    ['34.0 ±0.1', 'numeric', 'Caliper', '33.94', '34.05', ''],
+    ['4.33 x 60° ±0.1', 'numeric', 'Comperator', '4.24', '4.38', ''],
+    ['Ø30 ±0.1', 'numeric', 'Caliper', '29.95', '30.04', ''],
+    ['R26 ±0.1', 'numeric', 'XYZ cmm', '25.97', '25.99', ''],
+    ['34 ±0.1', 'numeric', 'Caliper', '33.94', '34.05', ''],
     ['M16x2', 'gauge', 'Thread pluge gage', '', '', 'pass'],
-    ['5.1 ±0.1 x 30°', 'numeric', 'Comperator', '5.04', '5.13', ''],
-    ['7.50 ±0.10 x 30°', 'numeric', 'Comperator', '7.45', '7.54', ''],
-    ['20.00 +0.03 / 0.00', 'numeric', 'Pins', '20.01', '20.027', ''],
-    ['90 ?', 'numeric', 'XYZ cmm', '89.95', '90.08', ''].map((x, i) => i === 0 ? '90' : x),
-    ['3.60 ±0.10', 'numeric', 'Cutting Part + Comperator', '3.54', '3.67', ''],
-    ['7.50 ±0.10 (x3)', 'numeric', 'Height Gauge', '7.48', '7.53', ''],
+    ['5.1 x 30° ±0.1', 'numeric', 'Comperator', '5.04', '5.13', ''],
+    ['7.50 x 30° ±0.1', 'numeric', 'Comperator', '7.45', '7.54', ''],
+    ['20 +0.03 / 0', 'numeric', 'Pins', '20.01', '20.027', ''],
+    ['90°', 'numeric', 'XYZ cmm', '89.95', '90.08', ''],
+    ['3.60 ±0.1', 'numeric', 'Cutting Part + Comperator', '3.54', '3.67', ''],
+    ['7.50 (x3) ±0.1', 'numeric', 'Height Gauge', '7.48', '7.53', ''],
     ['M2 Thru (x3)', 'gauge', 'Thread pluge gage', '', '', 'pass'],
   ]);
   // The 90° row has no tolerance on the form: it must be flagged, never silently assumed
@@ -99,26 +99,26 @@ test('real report 0112807-000 rev AB: 15 rows across two pages; image-only Requi
 
 test('interpretRequirement handles drawing notations', () => {
   const t = (req, tm, tp, m) => { const r = interpretRequirement(req, tm, tp, m); return [requirementText(r.feature), r.feature.kind, r.feature.unit, r.confidence >= 0.8, r.reasons.join(',')]; };
-  assert.deepEqual(t('25', '0.1', '0.1', 'Caliper'), ['25.0 ±0.1', 'numeric', 'mm', true, '']);
-  assert.deepEqual(t('Ø12.5', '.05', '.05', 'Micrometer'), ['Ø 12.50 ±0.05', 'numeric', 'mm', true, '']);
-  assert.deepEqual(t('¡30', '0.1', '0.1', 'Caliper'), ['Ø 30.0 ±0.1', 'numeric', 'mm', true, '']);
-  assert.deepEqual(t('20 0 + 0.03', '', '', 'Pins'), ['20.00 +0.03 / 0.00', 'numeric', 'mm', true, '']);
-  assert.deepEqual(t('20 +0.03/0', '', '', 'Pins'), ['20.00 +0.03 / 0.00', 'numeric', 'mm', true, '']);
-  assert.deepEqual(t('15 ±0.05', '', '', 'CMM'), ['15.00 ±0.05', 'numeric', 'mm', true, '']);
-  assert.deepEqual(t('15 +/-0.05', '', '', 'CMM'), ['15.00 ±0.05', 'numeric', 'mm', true, '']);
-  assert.deepEqual(t('10 +0.1 -0.05', '', '', 'CMM'), ['10.00 +0.10 / -0.05', 'numeric', 'mm', true, '']);
-  assert.deepEqual(t('12', '0', '0.05', 'Pins'), ['12.00 +0.05 / 0.00', 'numeric', 'mm', true, '']);
-  assert.deepEqual(t('12', '0.05', '0.1', 'Pins'), ['12.00 +0.10 / -0.05', 'numeric', 'mm', true, '']);
+  assert.deepEqual(t('25', '0.1', '0.1', 'Caliper'), ['25 ±0.1', 'numeric', 'mm', true, '']);
+  assert.deepEqual(t('Ø12.5', '.05', '.05', 'Micrometer'), ['Ø12.5 ±0.05', 'numeric', 'mm', true, '']);
+  assert.deepEqual(t('¡30', '0.1', '0.1', 'Caliper'), ['Ø30 ±0.1', 'numeric', 'mm', true, '']);
+  assert.deepEqual(t('20 0 + 0.03', '', '', 'Pins'), ['20 +0.03 / 0', 'numeric', 'mm', true, '']);
+  assert.deepEqual(t('20 +0.03/0', '', '', 'Pins'), ['20 +0.03 / 0', 'numeric', 'mm', true, '']);
+  assert.deepEqual(t('15 ±0.05', '', '', 'CMM'), ['15 ±0.05', 'numeric', 'mm', true, '']);
+  assert.deepEqual(t('15 +/-0.05', '', '', 'CMM'), ['15 ±0.05', 'numeric', 'mm', true, '']);
+  assert.deepEqual(t('10 +0.1 -0.05', '', '', 'CMM'), ['10 +0.1 / -0.05', 'numeric', 'mm', true, '']);
+  assert.deepEqual(t('12', '0', '0.05', 'Pins'), ['12 +0.05 / 0', 'numeric', 'mm', true, '']);
+  assert.deepEqual(t('12', '0.05', '0.1', 'Pins'), ['12 +0.1 / -0.05', 'numeric', 'mm', true, '']);
   assert.deepEqual(t('M8x1.25-6H', '', '', 'Thread plug gauge'), ['M8x1.25-6H', 'gauge', '', true, '']);
   assert.deepEqual(t('1/4-20 UNC', '', '', 'Thread gage'), ['1/4-20 UNC', 'gauge', '', true, '']);
   assert.deepEqual(t('2-56 UNC', '', '', 'Thread pluge gage'), ['2-56 UNC', 'gauge', '', true, '']);
-  assert.deepEqual(t('45°', '', '', 'Protractor'), ['45', 'numeric', 'deg', false, 'tolerance-missing']);
-  assert.deepEqual(t('45° ±1°', '', '', 'Protractor')[0], '45 ±1');
+  assert.deepEqual(t('45°', '', '', 'Protractor'), ['45°', 'numeric', 'deg', false, 'tolerance-missing']);
+  assert.deepEqual(t('45° ±1°', '', '', 'Protractor')[0], '45° ±1');
   assert.deepEqual(t('', '0.1', '0.1', 'Caliper'), ['? ±0.1', 'numeric', 'mm', false, 'nominal-missing']);
-  assert.deepEqual(t('7.50 (x3)', '0.1', '0.1', 'Height Gauge'), ['7.50 ±0.10 (x3)', 'numeric', 'mm', false, 'composite']);
-  assert.deepEqual(t('R5', '0.1', '0.1', 'Comparator'), ['R 5.0 ±0.1', 'numeric', 'mm', true, '']);
+  assert.deepEqual(t('7.50 (x3)', '0.1', '0.1', 'Height Gauge'), ['7.50 (x3) ±0.1', 'numeric', 'mm', false, 'composite']);
+  assert.deepEqual(t('R5', '0.1', '0.1', 'Comparator'), ['R5 ±0.1', 'numeric', 'mm', true, '']);
   // explicit tolerance in the text wins over the columns
-  assert.deepEqual(t('30 ±0.02', '0.1', '0.1', 'CMM')[0], '30.00 ±0.02');
+  assert.deepEqual(t('30 ±0.02', '0.1', '0.1', 'CMM')[0], '30 ±0.02');
 });
 
 test('interpretResult, parseDateText, fixGlyphs', () => {

@@ -1,7 +1,8 @@
 /* Printable Final Inspection Report. Shared by the on-screen preview and the print output. */
-.report-sheet { color: #111; background: #fff; direction: ltr; font: 10.5pt/1.4 Arial, Helvetica, sans-serif; }
-.report-sheet table.rs-doc { width: 100%; border-collapse: collapse; }
-.report-sheet table.rs-doc > thead > tr > td, .report-sheet table.rs-doc > tbody > tr > td { padding: 0; border: 0; vertical-align: top; }
+.report-sheet { color: #111; direction: ltr; font: 10.5pt/1.4 Arial, Helvetica, sans-serif; }
+.report-sheet .paper { width: 210mm; background: #fff; padding: 10mm 11mm 12mm; margin: 0 auto 18px; box-shadow: 0 14px 50px #1f3a2e33; }
+.rs-page { position: relative; width: 188mm; min-height: 275mm; display: flex; flex-direction: column; }
+.rs-measure .rs-page { min-height: 0; }
 .rs-running { display: flex; justify-content: space-between; gap: 12px; font-size: 7.5pt; color: #6a7a72; border-bottom: 1px solid #d9e1db; padding-bottom: 4px; margin-bottom: 8px; min-height: 12px; }
 .rs-mast { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding-bottom: 10px; border-bottom: 2.5px solid #2f5a1d; }
 .rs-brand { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; min-width: 0; }
@@ -32,35 +33,31 @@ table.rs-table { border-collapse: collapse; width: 100%; table-layout: fixed; fo
 .rs-table td.c { text-align: center; }
 .rs-table td.num { font-variant-numeric: tabular-nums; font-weight: 700; }
 .rs-table td.req { font-weight: 700; }
-.rs-table .unit { font-weight: 400; color: #5a6a62; font-size: 8pt; }
 .rs-rownote { font-weight: 400; font-size: 8pt; color: #5a6a62; }
 .rs-table .w-no { width: 5%; } .rs-table .w-req { width: 25%; } .rs-table .w-method { width: 18%; } .rs-table .w-tol { width: 8%; } .rs-table .w-min { width: 10%; } .rs-table .w-max { width: 10%; } .rs-table .w-res { width: 16%; }
-.rs-table thead { display: table-header-group; }
-.rs-table tr { break-inside: avoid; page-break-inside: avoid; }
 .r-pass { color: #1f6b33; font-weight: 800; }
 .r-fail { color: #a12e2e; font-weight: 800; }
 .r-review { color: #946117; font-weight: 800; }
 .r-empty { color: #7b8a82; font-weight: 700; font-size: 7.6pt; white-space: nowrap; }
-.rs-summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; font-size: 8.5pt; color: #4e6054; break-inside: avoid; }
+.rs-summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; font-size: 8.5pt; color: #4e6054; }
 .rs-status { display: inline-block; padding: 3px 9px; border-radius: 4px; font-weight: 800; font-size: 9pt; border: 1px solid; }
 .rs-status-pass { color: #1f6b33; background: #e9f4e6; border-color: #bfdcb8; }
 .rs-status-fail { color: #a12e2e; background: #fdeeee; border-color: #ecc3c3; }
 .rs-status-open { color: #946117; background: #fff6e1; border-color: #ecd9a6; }
 .rs-remarks { border: 1px solid #cdd8cf; border-top: 0; padding: 6px 8px; min-height: 42px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 9pt; }
-.rs-sign { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 14px; break-inside: avoid; }
+.rs-sign { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
 .rs-sign > div { display: grid; gap: 2px; }
 .rs-sign small { font-size: 6.8pt; color: #6a7a72; letter-spacing: .4px; }
 .rs-sign b { font-size: 9.5pt; min-height: 14px; }
 .rs-sign .line { display: block; border-bottom: 1px solid #333; height: 22px; }
-.rs-notes { margin-top: 12px; font-size: 7.3pt; color: #5a6a62; line-height: 1.45; border-top: 1px solid #d9e1db; padding-top: 6px; break-inside: avoid; }
-.rs-footer { margin-top: 8px; font-size: 7.3pt; color: #6a7a72; text-align: center; }
+.rs-notes { margin-top: 12px; font-size: 7.3pt; color: #5a6a62; line-height: 1.45; border-top: 1px solid #d9e1db; padding-top: 6px; }
+.rs-footer { margin-top: auto; padding-top: 8px; font-size: 7.3pt; color: #6a7a72; display: flex; justify-content: space-between; gap: 12px; }
 
 @media print {
-  @page { size: A4 portrait; margin: 10mm 11mm 14mm; }
-  @page { @bottom-right { content: 'Page ' counter(page) ' of ' counter(pages); font: 7.5pt Arial, Helvetica, sans-serif; color: #6a7a72; } }
-  .report-sheet { font-size: 10pt; }
-  .rs-table { font-size: 8.6pt; }
-  .rs-table thead { display: table-header-group; }
-  .rs-mast, .rs-facts, .rs-sampling, .rs-sign, .rs-notes { break-inside: avoid; }
+  @page { size: A4 portrait; margin: 10mm 11mm 12mm; }
+  .report-sheet .paper { width: auto; padding: 0; margin: 0; box-shadow: none; break-after: page; }
+  .report-sheet .paper-last { break-after: auto; }
+  .rs-page { height: 274mm; min-height: 0; overflow: hidden; }
+  .rs-measure .rs-page { height: auto; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

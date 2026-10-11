@@ -1,18 +1,29 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parseDecimal, parseMeasurement, decimalsOf, formatNumber, featureLimits, requirementText, limitsText,
-  featureProblems, evaluateFeature, summarize, defaultTemplate, createReport, syncReportFeatures, isLocked,
-  reportHasContent, headerWarnings, reportStatus, formatReportNo, blankFeature, formatDateForReport, HEADER_FIELDS,
+  parseDecimal, parseMeasurement, decimalsOf, formatNumber, featureLimits, requirementText, limitsText, printedRequired, printedTolerances,
+  featureProblems, evaluateFeature, summarize, createReport, syncReportWithProduct, blankProduct, findProduct, productKey, productRevisions,
+  reportHasContent, headerWarnings, reportStatus, reportSampling, blankFeature, formatDateForReport, HEADER_KEYS, PRODUCT_FIELDS,
 } from '../../src/core.js';
 
 const numeric = (over = {}) => ({ ...blankFeature('numeric'), nominal: '25.00', upper: '0.10', lower: '', symmetric: true, ...over });
+function sampleProduct() {
+  const p = blankProduct();
+  Object.assign(p, { partNo: 'MM606207C', revision: 'C', partName: 'Locker VG', catalogNo: 'MM606207C', customer: 'Atena Ltd.', generalTolerance: '±0.1', aql: '2.5', inspectionLevel: 'II' });
+  p.features = [
+    numeric({ label: 'Ø', nominal: '30', upper: '0.1', method: 'Caliper' }),
+    numeric({ nominal: '20', upper: '0.03', lower: '0', symmetric: false, method: 'Pins' }),
+    { ...blankFeature('gauge'), label: 'M16x2', method: 'Thread plug gage' },
+  ];
+  return p;
+}
 
 test('parseDecimal / parseMeasurement', () => {
   assert.equal(parseDecimal('25'), 25);
   assert.equal(parseDecimal('-0.05'), -0.05);
   assert.equal(parseDecimal('+0.1'), 0.1);
   assert.equal(parseDecimal('0,05'), 0.05);
+  assert.equal(parseDecimal('.1'), 0.1);
   assert.equal(parseDecimal(''), null);
   assert.ok(Number.isNaN(parseDecimal('abc')));
   assert.ok(Number.isNaN(parseDecimal('1e3')));
@@ -38,11 +49,9 @@ test('featureLimits: symmetric, asymmetric, unilateral, shifted', () => {
   assert.deepEqual(featureLimits(numeric()), { ok: true, nominal: 25, upper: 0.1, lower: -0.1, min: 24.9, max: 25.1, decimals: 2 });
   const uni = numeric({ nominal: '10', upper: '0.05', lower: '0', symmetric: false });
   assert.deepEqual(featureLimits(uni), { ok: true, nominal: 10, upper: 0.05, lower: 0, min: 10, max: 10.05, decimals: 2 });
-  // Shifted tolerance (both deviations positive), e.g. a shaft 20 +0.10/+0.05: the old model could not express this.
   const shifted = numeric({ nominal: '20', upper: '0.10', lower: '0.05', symmetric: false });
   const lim = featureLimits(shifted);
   assert.ok(lim.ok); assert.equal(lim.min, 20.05); assert.equal(lim.max, 20.1);
-  // Both negative, e.g. hole 20 -0.02/-0.05
   const neg = numeric({ nominal: '20', upper: '-0.02', lower: '-0.05', symmetric: false });
   assert.ok(featureLimits(neg).ok); assert.equal(featureLimits(neg).min, 19.95); assert.equal(featureLimits(neg).max, 19.98);
   assert.equal(featureLimits(numeric({ nominal: '20', upper: '-0.05', lower: '-0.02', symmetric: false })).reason, 'inverted');
@@ -53,13 +62,32 @@ test('featureLimits: symmetric, asymmetric, unilateral, shifted', () => {
   assert.equal(featureLimits({ ...blankFeature('gauge') }).reason, 'not-numeric');
 });
 
+test('printed Required / TOL cells follow the original form notation', () => {
+  // Required holds the nominal as written on the drawing; the tolerance goes to TOL-/TOL+
+  assert.equal(printedRequired(numeric({ label: 'Ø', nominal: '30', upper: '0.1' })), 'Ø30');
+  assert.deepEqual(printedTolerances(numeric({ nominal: '30', upper: '0.1' })), { minus: '0.1', plus: '0.1' });
+  assert.equal(printedRequired(numeric({ label: 'R', nominal: '26' })), 'R26');
+  assert.equal(printedRequired(numeric({ nominal: '4.33', suffix: 'x 60°' })), '4.33 x 60°');
+  assert.equal(printedRequired(numeric({ nominal: '7.50', suffix: '(x3)' })), '7.50 (x3)');
+  assert.equal(printedRequired(numeric({ nominal: '90', unit: 'deg' })), '90°');
+  assert.equal(printedRequired(numeric({ label: 'Depth', nominal: '5' })), 'Depth 5');
+  assert.equal(printedRequired({ ...blankFeature('gauge'), label: 'M16x2' }), 'M16x2');
+  assert.deepEqual(printedTolerances({ ...blankFeature('gauge'), label: 'M16x2' }), { minus: '', plus: '' });
+  // "20 0 +0.03" on the form: TOL- 0, TOL+ 0.03
+  assert.deepEqual(printedTolerances(numeric({ nominal: '20', upper: '0.03', lower: '0', symmetric: false })), { minus: '0', plus: '0.03' });
+  assert.deepEqual(printedTolerances(numeric({ nominal: '20', upper: '.1', lower: '-.1', symmetric: false })), { minus: '0.1', plus: '0.1' });
+  // Unusual signs stay visible so the cell can never be misread
+  assert.deepEqual(printedTolerances(numeric({ nominal: '20', upper: '0.10', lower: '0.05', symmetric: false })), { minus: '+0.05', plus: '0.10' });
+  assert.deepEqual(printedTolerances(numeric({ nominal: '20', upper: '-0.02', lower: '-0.05', symmetric: false })), { minus: '0.05', plus: '-0.02' });
+});
+
 test('requirementText is derived from the structured fields (cannot contradict the limits)', () => {
   assert.equal(requirementText(numeric()), '25.00 ±0.10');
-  assert.equal(requirementText(numeric({ label: 'Ø' })), 'Ø 25.00 ±0.10');
-  assert.equal(requirementText(numeric({ nominal: '10', upper: '0.05', lower: '0', symmetric: false })), '10.00 +0.05 / 0.00');
-  assert.equal(requirementText(numeric({ nominal: '20', upper: '0.1', lower: '0.05', symmetric: false })), '20.00 +0.10 / +0.05');
-  assert.equal(requirementText(numeric({ nominal: '20', upper: '-0.02', lower: '-0.05', symmetric: false })), '20.00 -0.02 / -0.05');
-  assert.equal(requirementText(numeric({ nominal: '45', upper: '0', unit: 'deg' })), '45 ±0');
+  assert.equal(requirementText(numeric({ label: 'Ø' })), 'Ø25.00 ±0.10');
+  assert.equal(requirementText(numeric({ nominal: '10', upper: '0.05', lower: '0', symmetric: false })), '10 +0.05 / 0');
+  assert.equal(requirementText(numeric({ nominal: '20', upper: '0.1', lower: '0.05', symmetric: false })), '20 +0.1 / +0.05');
+  assert.equal(requirementText(numeric({ nominal: '20', upper: '-0.02', lower: '-0.05', symmetric: false })), '20 -0.02 / -0.05');
+  assert.equal(requirementText(numeric({ nominal: '45', upper: '0', unit: 'deg' })), '45° ±0');
   assert.equal(requirementText({ ...blankFeature('gauge'), label: 'M8x1.25-6H' }), 'M8x1.25-6H');
   assert.equal(limitsText(numeric()), '24.90 – 25.10');
   // Invalid configuration still prints what the author typed, never a fabricated limit
@@ -71,7 +99,7 @@ test('featureProblems', () => {
   assert.deepEqual(featureProblems(numeric()), []);
   assert.deepEqual(featureProblems(numeric({ upper: 'x' })), ['invalid']);
   assert.deepEqual(featureProblems({ ...blankFeature('gauge') }), ['label']);
-  assert.deepEqual(featureProblems({ ...blankFeature('visual'), label: 'Deburr' }), []);
+  assert.deepEqual(featureProblems({ ...blankFeature('gauge'), label: 'M6' }), []);
 });
 
 test('evaluateFeature: numeric verdicts', () => {
@@ -86,114 +114,100 @@ test('evaluateFeature: numeric verdicts', () => {
   assert.equal(evaluateFeature(f, { min: '25', max: '' }).state, 'review');
   assert.equal(evaluateFeature(f, { min: '25', max: '' }).reason, 'min-max-required');
   assert.equal(evaluateFeature(f, { min: 'abc', max: '25' }).state, 'review');
-  // min > max is a data-entry error, not an out-of-tolerance verdict
   const inverted = evaluateFeature(f, { min: '25.1', max: '24.9' });
   assert.equal(inverted.state, 'review'); assert.equal(inverted.reason, 'min-above-max');
-  // A feature without valid limits never passes, even with numbers entered
   assert.equal(evaluateFeature(numeric({ upper: '' }), { min: '25', max: '25' }).state, 'review');
   assert.equal(evaluateFeature(numeric({ nominal: 'x' }), { min: '25', max: '25' }).state, 'review');
-  // Floating point boundaries
   assert.equal(evaluateFeature(numeric({ nominal: '0.3', upper: '0.1' }), { min: '0.2', max: '0.4' }).state, 'ok');
   assert.equal(evaluateFeature(numeric({ nominal: '1.1', upper: '0.1' }), { min: '1.0', max: '1.2' }).state, 'ok');
-  // Comma decimals and symbols in results
   assert.equal(evaluateFeature(f, { min: '24,95', max: 'Ø25.05' }).state, 'ok');
 });
 
-test('evaluateFeature: attribute kinds', () => {
+test('evaluateFeature: gauge rows', () => {
   const g = { ...blankFeature('gauge'), label: 'M8' };
   assert.equal(evaluateFeature(g, { outcome: '' }).state, 'empty');
   assert.equal(evaluateFeature(g, { outcome: 'pass' }).state, 'manual-pass');
   assert.equal(evaluateFeature(g, { outcome: 'fail' }).state, 'fail');
   assert.equal(evaluateFeature(g, { outcome: 'maybe' }).state, 'review');
-  // Numeric values entered against a gauge row are ignored, never a PASS
   assert.equal(evaluateFeature(g, { min: '8', max: '8', outcome: '' }).state, 'empty');
 });
 
-test('summarize and reportStatus', () => {
-  const t = defaultTemplate();
-  const r = createReport(t);
-  assert.equal(summarize(r.features, r.results).status, 'incomplete');
-  r.features.forEach(f => {
-    if (f.kind === 'numeric') r.results[f.id] = { min: f.nominal, max: f.nominal, outcome: '' };
-    else r.results[f.id] = { min: '', max: '', outcome: 'pass' };
-  });
-  assert.equal(summarize(r.features, r.results).status, 'pass');
-  assert.equal(reportStatus(r), 'pass');
-  r.results[r.features[0].id].max = '99';
-  assert.equal(reportStatus(r), 'fail');
-  r.results[r.features[0].id].max = r.features[0].nominal;
-  assert.equal(reportStatus(r), 'pass');
+test('products: key, lookup, revisions', () => {
+  const a = sampleProduct();
+  const b = { ...sampleProduct(), revision: 'D' };
+  assert.equal(productKey(' mm606207c ', 'Rev. c'), 'MM606207C@C');
+  assert.equal(findProduct([a, b], 'mm606207c', 'c'), a);
+  assert.equal(findProduct([a, b], 'MM606207C', 'B'), null);
+  assert.deepEqual(productRevisions([a, b], 'MM606207C').map(p => p.revision), ['D', 'C']);
+  assert.deepEqual(PRODUCT_FIELDS, ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql', 'inspectionLevel']);
 });
 
-test('createReport honours field policies; non-lockable fields are always fresh', () => {
-  const t = defaultTemplate();
-  t.fields.customer = { mode: 'carry', value: 'Fallback Ltd' };
-  t.fields.partNo = { mode: 'fixed', value: 'P-100' };
-  t.fields.catalogNo = { mode: 'default', value: 'CAT-1' };
-  t.fields.revision = { mode: 'blank', value: 'should-not-appear' };
-  t.fields.quantity = { mode: 'fixed', value: '500' }; // not lockable: must be ignored
-  t.fields.accepted = { mode: 'carry', value: '7' };    // not lockable: must be ignored
-  const first = createReport(t, null, new Date(2026, 9, 11));
-  assert.equal(first.header.customer, 'Fallback Ltd');
-  assert.equal(first.header.partNo, 'P-100');
-  assert.equal(first.header.catalogNo, 'CAT-1');
-  assert.equal(first.header.revision, '');
-  assert.equal(first.header.quantity, '');
-  assert.equal(first.header.accepted, '');
+test('createReport: product fields, features and the inspector carry over; order fields start empty', () => {
+  const p = sampleProduct();
+  const first = createReport(p, null, new Date(2026, 9, 11));
+  assert.equal(first.header.partNo, 'MM606207C');
+  assert.equal(first.header.revision, 'C');
+  assert.equal(first.header.customer, 'Atena Ltd.');
+  assert.equal(first.header.aql, '2.5');
+  assert.equal(first.header.inspectionLevel, 'II');
+  assert.equal(first.header.generalTolerance, '±0.1');
   assert.equal(first.header.inspectionDate, '2026-10-11');
-  assert.equal(first.header.reportNo, 'FIR-0001');
-  assert.equal(isLocked(t, 'partNo'), true);
-  assert.equal(isLocked(t, 'quantity'), false);
-  assert.equal(isLocked(t, 'customer'), false);
-  first.header.customer = 'Acme'; first.header.accepted = '9'; first.header.catalogNo = 'CAT-9';
-  const second = createReport(t, first);
-  assert.equal(second.header.customer, 'Acme', 'carry copies the previous value');
-  assert.equal(second.header.catalogNo, 'CAT-1', 'default resets to the template value');
-  assert.equal(second.header.accepted, '');
-  assert.equal(second.header.reportNo, 'FIR-0001', 'the number is consumed by the caller, not by createReport');
-  assert.equal(Object.keys(second.results).length, t.features.length);
+  assert.equal(first.header.reportNo, '');
+  assert.equal(first.header.quantity, '');
+  assert.equal(first.productId, p.id);
+  assert.equal(first.productKey, 'MM606207C@C');
+  assert.equal(first.features.length, 3);
+  assert.equal(Object.keys(first.results).length, 3);
+  assert.equal(reportHasContent(first), false, 'a fresh report is not content');
+  first.header.inspector = 'Yuri S.'; first.header.quantity = '250'; first.header.reportNo = '9515_2';
+  assert.equal(reportHasContent(first), true);
+  const second = createReport(p, first);
+  assert.equal(second.header.inspector, 'Yuri S.', 'the inspector carries over');
+  assert.equal(second.header.quantity, '', 'lot data never carries');
+  assert.equal(second.header.reportNo, '');
   assert.notEqual(second.id, first.id);
-  t.numbering.mode = 'manual';
-  assert.equal(createReport(t).header.reportNo, '');
+  const none = createReport(null);
+  assert.equal(none.features.length, 0);
+  assert.equal(none.header.inspectionLevel, 'II');
+  for (const key of HEADER_KEYS) assert.ok(key in none.header);
 });
 
-test('formatReportNo', () => {
-  assert.equal(formatReportNo({ prefix: 'FIR-', next: 12, width: 4 }), 'FIR-0012');
-  assert.equal(formatReportNo({ prefix: '', next: 7, width: 0 }), '7');
-  assert.equal(formatReportNo({ prefix: 'Q', next: 7, width: 99 }), 'Q00000007');
-});
-
-test('syncReportFeatures keeps results by id, drops removed rows, adds new rows', () => {
-  const t = defaultTemplate();
-  const r = createReport(t);
-  const keep = t.features[0].id;
-  r.results[keep] = { min: '1', max: '2', outcome: '' };
-  t.features = [t.features[0], { ...blankFeature('numeric'), nominal: '5', upper: '0.1' }];
-  const synced = syncReportFeatures(r, t);
+test('syncReportWithProduct keeps results by id, drops removed rows, adds new rows, refreshes product fields', () => {
+  const p = sampleProduct();
+  const r = createReport(p);
+  const keep = p.features[0].id;
+  r.results[keep] = { min: '1', max: '2', outcome: '', note: '' };
+  p.features = [p.features[0], numeric({ nominal: '5', upper: '0.1' })];
+  p.partName = 'Renamed';
+  const synced = syncReportWithProduct(r, p);
   assert.equal(synced.features.length, 2);
-  assert.deepEqual(synced.results[keep], { min: '1', max: '2', outcome: '' });
-  assert.deepEqual(synced.results[t.features[1].id], { min: '', max: '', outcome: '', note: '' });
-  assert.equal(r.features.length, 4, 'original report not mutated');
-  assert.equal(Object.keys(r.results).length, 4);
+  assert.deepEqual(synced.results[keep], { min: '1', max: '2', outcome: '', note: '' });
+  assert.deepEqual(synced.results[p.features[1].id], { min: '', max: '', outcome: '', note: '' });
+  assert.equal(synced.header.partName, 'Renamed');
+  assert.equal(r.features.length, 3, 'original report not mutated');
 });
 
-test('reportHasContent and headerWarnings', () => {
-  const t = defaultTemplate();
-  const r = createReport(t);
-  // Values the template produced (fixed, default, carried) are not user content
-  t.fields.partNo.value = 'P1';
-  t.fields.customer = { mode: 'carry', value: '' };
-  const r2 = createReport(t, { header: { customer: 'Carried Co' } });
-  assert.equal(r2.header.customer, 'Carried Co');
-  assert.equal(reportHasContent(r2), false, 'fixed + carried values alone are not content');
-  r2.header.customer = 'Edited Co';
-  assert.equal(reportHasContent(r2), true, 'an edited header value is content');
-  const empty = createReport({ ...t, fields: Object.fromEntries(HEADER_FIELDS.map(f => [f.key, { mode: 'blank', value: '' }])) });
-  assert.equal(reportHasContent(empty), false);
-  empty.results[empty.features[0].id].min = '1';
-  assert.equal(reportHasContent(empty), true);
-  // Reports without a baseline (legacy) treat any header value as content
-  assert.equal(reportHasContent({ header: { customer: 'x' }, results: {}, remarks: '' }), true);
+test('summarize, reportStatus and sampling', () => {
+  const p = sampleProduct();
+  const r = createReport(p);
+  assert.equal(summarize(r.features, r.results).status, 'incomplete');
+  r.results[r.features[0].id] = { min: '29.95', max: '30.04', outcome: '' };
+  r.results[r.features[1].id] = { min: '20.01', max: '20.027', outcome: '' };
+  r.results[r.features[2].id] = { min: '', max: '', outcome: 'pass' };
+  assert.equal(reportStatus(r), 'pass');
+  r.results[r.features[0].id].max = '30.2';
+  assert.equal(reportStatus(r), 'fail');
+  // Lot 250, AQL 2.5, level II -> code G, n = 32 (as printed on the original report)
+  r.header.quantity = '250';
+  const { plan } = reportSampling(r);
+  assert.equal(plan.sampleSize, 32);
+  assert.equal(plan.plan.letter, 'G');
+  r.header.quantity = '';
+  assert.equal(reportSampling(r).plan, null);
+});
+
+test('headerWarnings', () => {
+  const r = createReport(sampleProduct());
   r.header.quantity = '100'; r.header.accepted = '90'; r.header.rejected = '20';
   assert.ok(headerWarnings(r).includes('counts-exceed-lot'));
   r.header.rejected = '5'; r.header.accepted = 'x';
@@ -206,9 +220,9 @@ test('reportHasContent and headerWarnings', () => {
   assert.deepEqual(headerWarnings(r), []);
 });
 
-test('formatDateForReport is unambiguous', () => {
-  assert.equal(formatDateForReport('2026-10-11'), '11 Oct 2026');
-  assert.equal(formatDateForReport('2026-01-05'), '5 Jan 2026');
+test('formatDateForReport prints dd/mm/yy like the original form', () => {
+  assert.equal(formatDateForReport('2023-09-06'), '06/09/23');
+  assert.equal(formatDateForReport('2026-04-20'), '20/04/26');
   assert.equal(formatDateForReport(''), '');
   assert.equal(formatDateForReport('garbage'), 'garbage');
 });

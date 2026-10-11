@@ -31,12 +31,12 @@ test('AI rows fill image-only cells; text-layer results and methods are kept', a
   assert.equal(summary.rowsAdded, 0);
   assert.equal(draft.features.length, 15);
   const r1 = draft.features[0];
-  assert.equal(requirementText(r1.feature), '0.69 ±0.10');
+  assert.equal(requirementText(r1.feature), '0.69 ±0.1');
   assert.deepEqual(r1.result, before, 'measured values from the text layer are preserved');
   assert.equal(evaluateFeature(r1.feature, r1.result).state, 'ok');
   assert.equal(r1.ai, true); assert.equal(r1.needsReview, true, 'AI-read cells still require a human confirmation');
-  assert.equal(requirementText(draft.features[1].feature), 'Depth 0.508 ±0.100');
-  assert.equal(requirementText(draft.features[5].feature), 'Ø 3.05 ±0.10');
+  assert.equal(requirementText(draft.features[1].feature), 'Depth 0.508 ±0.1');
+  assert.equal(requirementText(draft.features[5].feature), 'Ø3.05 ±0.1');
   assert.equal(draft.features[9].feature.kind, 'gauge'); assert.equal(draft.features[9].feature.label, '0.33 x 45° chamfer'); assert.equal(draft.features[9].result.outcome, 'pass');
   assert.equal(draft.features[10].feature.label, '2-56 UNC');
   // Row 15: numbers were measured; nominal came from the AI but the tolerance is missing -> flagged, cannot pass
@@ -68,14 +68,14 @@ test('AI disagreement with a confident text-layer value is flagged, not applied'
   assert.equal(draft.features[8].feature.upper, '0.5'); assert.ok(!draft.features[8].reasons.includes('tolerance-missing'));
   // A row the text layer never saw is appended and flagged
   assert.equal(draft.features.length, 13);
-  assert.equal(draft.features[12].feature.kind, 'visual'); assert.ok(draft.features[12].reasons.includes('ai-only'));
+  assert.equal(draft.features[12].feature.kind, 'gauge'); assert.ok(draft.features[12].reasons.includes('ai-only'));
 });
 
 test('aiRowToFeature normalises signs and falls back to text interpretation', () => {
   const a = aiRowToFeature({ no: 1, requiredText: '20 0 +0.03', kind: 'numeric', label: '', nominal: '20', upper: '0.03', lower: '0', symmetric: false, unit: 'mm', suffix: '', method: 'Pins', min: '20.01', max: '20.027', outcome: '', confidence: 0.9, note: '' });
-  assert.equal(requirementText(a.feature), '20.00 +0.03 / 0.00');
+  assert.equal(requirementText(a.feature), '20 +0.03 / 0');
   const b = aiRowToFeature({ no: 2, requiredText: '15 ±0.05', kind: 'numeric', label: '', nominal: '', upper: '', lower: '', symmetric: true, unit: 'mm', suffix: '', method: 'CMM', min: '', max: '', outcome: '', confidence: 0.9, note: '' });
-  assert.equal(requirementText(b.feature), '15.00 ±0.05');
+  assert.equal(requirementText(b.feature), '15 ±0.05');
   const c = aiRowToFeature({ no: 3, requiredText: 'M6', kind: 'gauge', label: '', nominal: '', upper: '', lower: '', symmetric: true, unit: '', suffix: '', method: 'Plug', min: 'V', max: '', outcome: '', confidence: 0.9, note: '' });
   assert.equal(c.feature.label, 'M6'); assert.equal(c.result.outcome, 'pass');
 });

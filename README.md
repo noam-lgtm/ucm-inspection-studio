@@ -6,16 +6,15 @@ Live: https://noam-lgtm.github.io/ucm-inspection-studio/
 
 ## What it does
 
-* **Templates** (per part family or customer): company identity and logo, report numbering, which header fields are fixed / prefilled / carried over from the previous report / blank, and the list of characteristics to inspect.
-* **Reports**: fill the order details, enter the minimum and maximum measured value per characteristic (or GO / NO-GO, OK / NOT OK), get a verdict per row and for the report.
+* **Products** (part number + revision): the characteristics to inspect with their nominal, tolerance and instrument, plus customer, catalog number, general tolerance and AQL. Created once, usually by importing an existing report, and reused for every lot.
+* **Reports**: pick the product, fill the order details (report number, orders, quantity, inspector), enter the minimum and maximum measured value per characteristic (or GO / NO-GO), get a verdict per row and for the report.
 * **Sampling**: lot size + inspection level + AQL → code letter, sample size and Ac/Re from MIL-STD-105D/E Tables I and II-A (single sampling, normal inspection). Arrow cells and the "sample size ≥ lot → 100% inspection" rule are applied.
-* **PDF**: an English, A4, customer-ready report printed through the browser (Save as PDF). Running header and page numbers on every page, table header repeated across pages.
+* **PDF**: an English, A4, customer-ready report printed through the browser (Save as PDF). Pages are split explicitly after measuring the rows: running header, table header and page numbers on every page, the summary block never alone on a page. *Required* is printed in drawing notation (`Ø30`, `R26`, `4.33 x 60°`), tolerances and measured values exactly as typed.
 * **Archive**: every report is kept locally when a new one is started; reports can be reopened, duplicated, reprinted or deleted.
 * **Backup**: export / import everything as one JSON file. Import merges and never deletes.
 * **Offline**: a service worker caches the app so it works without a network connection once loaded.
-* **PDF import**: upload an existing inspection report (PDF or photo). The text layer is parsed deterministically; image-only cells and scans can be read by Claude through the sync server; everything uncertain is highlighted next to a crop of the PDF for confirmation. The result is a **product specification** stored by part number + revision, plus the historical report in the archive. See `docs/IMPORT-AND-SYNC.md`.
-* **Products**: part number + revision → characteristics, tolerances, instruments, customer. A new report starts from a product in one click.
-* **Sync (optional)**: a small Cloudflare Worker (free tier) keeps products, templates and reports identical on every computer, stores the original PDFs and writes a daily backup. The app remains local-first.
+* **PDF import**: upload an existing inspection report (PDF or photo). The text layer is parsed deterministically; image-only cells and scans can be read by Claude through the sync server (optional, off by default); everything uncertain is highlighted next to a crop of the PDF for confirmation. Saving creates the **product** (by part number + revision) and opens the imported report itself, ready to print; it is also kept in the archive. See `docs/IMPORT-AND-SYNC.md`.
+* **Sync**: a small Cloudflare Worker (free tier) keeps products and reports identical on every computer, stores the original PDFs and writes a daily backup. With a sync server configured, the site is locked behind the company access key. The app remains local-first.
 
 ## Engineering rules the app enforces
 
@@ -43,7 +42,7 @@ Layout:
 ```
 index.html            shell
 src/sampling.js       Table I / Table II-A data and lookups
-src/core.js           features, limits, verdicts, templates, reports
+src/core.js           features, limits, verdicts, products, reports
 src/storage.js        localStorage persistence, v1 migration, backup files
 src/report-sheet.js   printable report (HTML)
 src/pdf-pages.js      pdf.js glue: positioned text + image placements
@@ -52,7 +51,7 @@ src/ai-merge.js       merges the vision model's answer into the draft
 src/pdf-render.js     browser rendering / crops (uses vendor/pdfjs, legacy build)
 src/sync.js           sync client (push/pull, tombstones, files, AI calls)
 src/ui-import.js      import wizard; src/ui-products.js products; src/ui-settings.js settings
-src/app.js            UI shell, report, archive, templates
+src/app.js            UI shell, report, archive, preview, pagination
 worker/               Cloudflare Worker: sync API, file storage, AI proxy, daily backup
 src/i18n.js           Hebrew UI strings
 src/app.css, src/report.css

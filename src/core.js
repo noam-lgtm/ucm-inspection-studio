@@ -1,37 +1,49 @@
 /*
  * Pure, deterministic model logic. No DOM, no storage.
- * Features (what the drawing requires), results (what was measured), and
- * the evaluation that joins them. The printed "Required" text is DERIVED
- * from the structured nominal/deviation fields, so a requirement can never
- * contradict the limits that produce the PASS/FAIL verdict.
+ * Products (what the drawing requires, per part number + revision), reports
+ * (what was measured for one lot) and the evaluation that joins them.
+ * The printed "Required" text and the TOL-/TOL+ cells are DERIVED from the
+ * structured nominal/deviation fields, so a requirement can never contradict
+ * the limits that produce the verdict.
  */
 import { samplingPlan, LEVELS } from './sampling.js';
 
-export const FEATURE_KINDS = Object.freeze(['numeric', 'gauge', 'visual']);
+export const FEATURE_KINDS = Object.freeze(['numeric', 'gauge']);
 export const UNITS = Object.freeze(['mm', 'in', 'deg', 'um', '']);
-export const FIELD_MODES = Object.freeze(['fixed', 'default', 'carry', 'blank']);
 export const MAX_FEATURES = 200;
 
+/** Company identity printed on every report (the original UCM form). */
+export const COMPANY = Object.freeze({
+  name: 'UCM Technologies',
+  tagline: 'Professional Milling • Turning and Assembly Solutions',
+  footerLine: '11 Hidekel St., Building 15, Gav-Yam Park, Yavne | Tel: 08-9421002 | www.ucm.co.il | info@ucm.co.il',
+});
+
+/** Header fields of a report, in the order of the original form. */
 export const HEADER_FIELDS = Object.freeze([
-  { key: 'reportNo', en: 'Report No.', lockable: false },
-  { key: 'inspectionDate', en: 'Inspection date', lockable: false, type: 'date' },
-  { key: 'customer', en: 'Customer', lockable: true },
-  { key: 'purchaseOrder', en: 'Purchase order', lockable: true },
-  { key: 'productionOrder', en: 'Production order', lockable: true },
-  { key: 'quantity', en: 'Lot quantity', lockable: false, numeric: true },
-  { key: 'catalogNo', en: 'Catalog No.', lockable: true },
-  { key: 'partNo', en: 'Part No.', lockable: true },
-  { key: 'partName', en: 'Part name', lockable: true },
-  { key: 'revision', en: 'Revision', lockable: true },
-  { key: 'inspector', en: 'Inspector', lockable: true },
-  { key: 'generalTolerance', en: 'General tolerance', lockable: true },
-  { key: 'aql', en: 'AQL', lockable: true },
-  { key: 'inspectionLevel', en: 'Inspection level', lockable: true, type: 'level' },
-  { key: 'totalInspected', en: 'Total inspected', lockable: false, numeric: true },
-  { key: 'accepted', en: 'Accepted qty', lockable: false, numeric: true },
-  { key: 'rejected', en: 'Rejected qty', lockable: false, numeric: true },
+  { key: 'reportNo', en: 'Report No.' },
+  { key: 'inspectionDate', en: 'Date', type: 'date' },
+  { key: 'productionOrder', en: 'Prod. order' },
+  { key: 'customer', en: 'Customer' },
+  { key: 'quantity', en: 'Quantity', numeric: true },
+  { key: 'purchaseOrder', en: 'Purchase No.' },
+  { key: 'catalogNo', en: 'Catalog No.', product: true },
+  { key: 'partNo', en: 'Part No.', product: true },
+  { key: 'partName', en: 'Part name', product: true },
+  { key: 'revision', en: 'Rev.', product: true },
+  { key: 'aql', en: 'AQL', product: true },
+  { key: 'inspectionLevel', en: 'Inspection level', product: true, type: 'level' },
+  { key: 'generalTolerance', en: 'General tolerance', product: true },
+  { key: 'totalInspected', en: 'Total inspected', numeric: true },
+  { key: 'accepted', en: 'Accepted', numeric: true },
+  { key: 'rejected', en: 'Rejected', numeric: true },
+  { key: 'inspector', en: 'Name' },
 ]);
 export const HEADER_KEYS = HEADER_FIELDS.map(f => f.key);
+/** Fields that come from the product specification (not typed per report). */
+export const PRODUCT_FIELDS = Object.freeze(['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql', 'inspectionLevel']);
+/** Fields typed for every lot. */
+export const ORDER_FIELDS = Object.freeze(['reportNo', 'inspectionDate', 'productionOrder', 'purchaseOrder', 'quantity', 'inspector', 'totalInspected', 'accepted', 'rejected']);
 
 export function newId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
@@ -46,7 +58,7 @@ export function localDate(now = new Date()) {
 
 const NUMBER_RE = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;
 
-/** Strict decimal parse of a configuration value ("25", "-0.05", "+0.1", "0,05"). null when blank, NaN when invalid. */
+/** Strict decimal parse of a configuration value ("25", "-0.05", "+0.1", "0,05", ".1"). null when blank, NaN when invalid. */
 export function parseDecimal(value) {
   const text = String(value == null ? '' : value).trim().replace(',', '.');
   if (!text) return null;
@@ -81,13 +93,16 @@ export function formatNumber(num, decimals) {
   return fixed === '-0' || /^-0\.0+$/.test(fixed) ? fixed.slice(1) : fixed;
 }
 
-function signed(num, decimals) {
-  const t = formatNumber(num, decimals);
-  return num > 0 ? '+' + t : t;
-}
-
 export function unitLabel(unit) {
   return { mm: 'mm', in: 'in', deg: '°', um: 'µm', '': '' }[unit] ?? '';
+}
+
+/** Numeric text as the author typed it, tidied: ".1" -> "0.1", "0,05" -> "0.05", "+0.03" -> "0.03" when `unsigned`. */
+function tidyNumber(value, unsigned = false) {
+  let text = String(value == null ? '' : value).trim().replace(',', '.');
+  if (!text) return '';
+  if (unsigned) text = text.replace(/^[+-]/, '');
+  return text.replace(/^([+-]?)\./, '$10.');
 }
 
 // ---------- features ----------
@@ -117,35 +132,59 @@ export function featureLimits(feature) {
   return { ok: true, nominal, upper, lower, min: nominal + lower, max: nominal + upper, decimals };
 }
 
-/** Human text of the requirement, derived from the structured fields: "25.00 ±0.10", "10 +0.05 / 0", "M8x1.25-6H". */
-export function requirementText(feature) {
+/**
+ * The "Required" cell as printed on the form: label + nominal (as typed) + unit sign + suffix.
+ * "Ø30", "R26", "4.33 x 60°", "90°", "7.50 (x3)", "M16x2".
+ */
+export function printedRequired(feature) {
   if (!feature) return '';
-  if (feature.kind !== 'numeric') return String(feature.label || '').trim();
-  const lim = featureLimits(feature);
   const label = String(feature.label || '').trim();
+  if (feature.kind !== 'numeric') return label;
+  const nominal = tidyNumber(feature.nominal);
+  const unit = feature.unit === 'deg' ? '°' : feature.unit === 'in' ? '"' : feature.unit === 'um' ? ' µm' : '';
   const suffix = String(feature.suffix || '').trim();
-  if (!lim.ok) {
-    const nom = String(feature.nominal ?? '').trim() || '?';
-    const up = String(feature.upper ?? '').trim();
-    const tol = up ? (feature.symmetric ? '±' + up : up + ' / ' + String(feature.lower ?? '').trim()) : '';
-    return [label, nom, tol, suffix].filter(Boolean).join(' ');
-  }
-  const d = lim.decimals;
-  const nominal = formatNumber(lim.nominal, d);
-  let tol;
-  if (lim.upper === -lim.lower) tol = lim.upper === 0 ? '±0' : '±' + formatNumber(lim.upper, d);
-  else tol = `${signed(lim.upper, d)} / ${signed(lim.lower, d)}`;
-  return [label, `${nominal} ${tol}`, suffix].filter(Boolean).join(' ');
+  // Drawing symbols (Ø, R, SR, ∠) hug the number; words get a space.
+  const glue = label && (label.length <= 2 && !/\d/.test(label)) ? '' : ' ';
+  const core = nominal ? (label ? label + glue + nominal : nominal) + unit : label;
+  return [core, suffix].filter(Boolean).join(' ');
 }
 
-/** "24.90 / 25.10" style limits text for the report. */
+/**
+ * TOL- / TOL+ cells as printed: magnitudes as typed ("0.1", "0", "0.03").
+ * A deviation with the unexpected sign keeps its sign ("+0.05" in TOL- for 20 +0.10/+0.05).
+ */
+export function printedTolerances(feature) {
+  if (!feature || feature.kind !== 'numeric') return { minus: '', plus: '' };
+  const upper = tidyNumber(feature.upper);
+  if (feature.symmetric) return { minus: tidyNumber(upper, true), plus: tidyNumber(upper, true) };
+  const lower = tidyNumber(feature.lower);
+  const lo = parseDecimal(lower), up = parseDecimal(upper);
+  const minus = lower === '' ? '' : (Number.isFinite(lo) && lo > 0 ? '+' + tidyNumber(lower, true) : tidyNumber(lower, true));
+  const plus = upper === '' ? '' : (Number.isFinite(up) && up < 0 ? '-' + tidyNumber(upper, true) : tidyNumber(upper, true));
+  return { minus, plus };
+}
+
+/** Requirement with its tolerance, for the editor: "Ø30 ±0.1", "20 +0.03 / 0", "M16x2". */
+export function requirementText(feature) {
+  if (!feature) return '';
+  const base = printedRequired(feature) || (feature.kind === 'numeric' ? '?' : '');
+  if (feature.kind !== 'numeric') return base;
+  const { minus, plus } = printedTolerances(feature);
+  if (!plus && !minus) return base;
+  const up = plus.startsWith('-') ? plus : '+' + plus;
+  const lo = minus === '0' || minus === '' ? '0' : (minus.startsWith('+') ? minus : '-' + minus);
+  const tol = feature.symmetric ? '±' + plus : `${up} / ${lo}`;
+  return `${base} ${tol}`.trim();
+}
+
+/** "24.90 – 25.10" style limits text. */
 export function limitsText(feature) {
   const lim = featureLimits(feature);
   if (!lim.ok) return '';
   return `${formatNumber(lim.min, lim.decimals)} – ${formatNumber(lim.max, lim.decimals)}`;
 }
 
-/** Problems a template author must fix before a feature can produce verdicts. Empty array = fine. */
+/** Problems the author must fix before a feature can produce verdicts. Empty array = fine. */
 export function featureProblems(feature) {
   const problems = [];
   if (!feature) return ['missing'];
@@ -205,57 +244,7 @@ export function summarize(features, results) {
   return counts;
 }
 
-// ---------- templates ----------
-
-export function defaultFieldPolicy() {
-  const policy = {};
-  for (const f of HEADER_FIELDS) policy[f.key] = { mode: 'blank', value: '' };
-  Object.assign(policy, {
-    customer: { mode: 'carry', value: '' },
-    purchaseOrder: { mode: 'carry', value: '' },
-    productionOrder: { mode: 'carry', value: '' },
-    inspector: { mode: 'carry', value: '' },
-    catalogNo: { mode: 'fixed', value: '' },
-    partNo: { mode: 'fixed', value: '' },
-    partName: { mode: 'fixed', value: '' },
-    revision: { mode: 'fixed', value: '' },
-    generalTolerance: { mode: 'fixed', value: '±0.1' },
-    aql: { mode: 'fixed', value: '2.5' },
-    inspectionLevel: { mode: 'fixed', value: 'II' },
-  });
-  return policy;
-}
-
-export function defaultTemplate() {
-  return {
-    id: newId(), name: 'תבנית לדוגמה', // "תבנית לדוגמה"
-    updatedAt: new Date().toISOString(),
-    company: {
-      name: 'UCM Technologies',
-      tagline: 'Professional Milling, Turning and Assembly Solutions',
-      footer: '11 Hidekel St., Building 15, Gav-Yam Park, Yavne | Tel: 08-9421002 | www.ucm.co.il | info@ucm.co.il',
-      logo: '',
-      standardName: 'MIL-STD-105D',
-    },
-    numbering: { mode: 'auto', prefix: 'FIR-', next: 1, width: 4 },
-    fields: defaultFieldPolicy(),
-    features: [
-      { ...blankFeature('numeric'), label: '', nominal: '25.00', upper: '0.10', lower: '', symmetric: true, unit: 'mm', method: 'Caliper' },
-      { ...blankFeature('numeric'), label: 'Ø', nominal: '10', upper: '0.05', lower: '0', symmetric: false, unit: 'mm', method: 'Pin gauge' },
-      { ...blankFeature('gauge'), label: 'M8x1.25-6H', method: 'Thread plug gauge', unit: '' },
-      { ...blankFeature('visual'), label: 'Deburred, no visual defects', method: 'Visual', unit: '' },
-    ],
-  };
-}
-
-export function formatReportNo(numbering, n = numbering.next) {
-  const width = Math.max(0, Math.min(8, Number(numbering.width) || 0));
-  return `${numbering.prefix || ''}${String(n).padStart(width, '0')}`;
-}
-
 // ---------- products (specification per part number + revision) ----------
-
-export const PRODUCT_FIELDS = Object.freeze(['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql', 'inspectionLevel']);
 
 export function normalizePartNo(value) { return String(value == null ? '' : value).trim().replace(/\s+/g, ' ').toUpperCase(); }
 export function normalizeRevision(value) { return String(value == null ? '' : value).trim().replace(/^rev\.?\s*/i, '').toUpperCase(); }
@@ -266,7 +255,7 @@ export function blankProduct() {
   const now = new Date().toISOString();
   return {
     id: newId(), partNo: '', revision: '', partName: '', catalogNo: '', customer: '',
-    generalTolerance: '', aql: '', inspectionLevel: '', features: [], sourceFileId: '', sourceReportNo: '',
+    generalTolerance: '±0.1', aql: '2.5', inspectionLevel: 'II', features: [], sourceFileId: '', sourceReportNo: '',
     notes: '', createdAt: now, updatedAt: now,
   };
 }
@@ -286,67 +275,48 @@ export function productRevisions(products, partNo) {
 // ---------- reports ----------
 
 /**
- * Create a fresh report from a template. `previous` (optional) supplies carry-over values.
- * Mutates nothing; returns { report, numberingNext } so the caller decides whether to consume the number.
+ * Create a fresh report for a product (or an empty one). `previous` supplies the
+ * inspector's name, which is the only value that carries over between lots.
  */
-export function createReport(template, previous = null, now = new Date(), product = null) {
+export function createReport(product = null, previous = null, now = new Date()) {
   const header = {};
-  for (const f of HEADER_FIELDS) {
-    const policy = template.fields[f.key] || { mode: 'blank', value: '' };
-    const mode = f.lockable ? policy.mode : 'blank';
-    if (mode === 'fixed' || mode === 'default') header[f.key] = String(policy.value ?? '');
-    else if (mode === 'carry') header[f.key] = String(previous && previous.header && previous.header[f.key] || policy.value || '');
-    else header[f.key] = '';
-  }
-  // A product specification overrides the product-related header fields and supplies the characteristics.
-  if (product) {
-    for (const key of PRODUCT_FIELDS) if (String(product[key] || '').trim()) header[key] = String(product[key]);
-  }
+  for (const key of HEADER_KEYS) header[key] = '';
+  if (product) for (const key of PRODUCT_FIELDS) header[key] = String(product[key] || '');
+  if (!LEVELS.includes(header.inspectionLevel)) header.inspectionLevel = 'II';
+  header.inspector = String(previous && previous.header && previous.header.inspector || '');
   header.inspectionDate = localDate(now);
-  if (template.numbering && template.numbering.mode === 'auto') header.reportNo = formatReportNo(template.numbering);
-  const source = product ? product.features : template.features;
-  const features = source.map(f => ({ ...f }));
+  const features = (product ? product.features : []).map(f => ({ ...f }));
   const results = {};
   features.forEach(f => { results[f.id] = blankResult(); });
   return {
-    id: newId(), templateId: template.id, templateName: template.name,
+    id: newId(),
     productId: product ? product.id : '', productKey: product ? productKey(product.partNo, product.revision) : '', sourceFileId: '',
     createdAt: now.toISOString(), updatedAt: now.toISOString(),
     header, baseline: { ...header }, features, results, remarks: '',
   };
 }
 
-/** Product-related header fields are locked when the report comes from a product specification. */
-export function isProductLocked(report, key) {
-  return Boolean(report && report.productId) && ['partNo', 'revision'].includes(key);
-}
-
-/** Keep a draft's feature rows in sync with its template, preserving entered results by feature id. */
-export function syncReportFeatures(report, template, product = null) {
+/** Refresh a draft from its product (features and product fields), keeping entered results by feature id. */
+export function syncReportWithProduct(report, product) {
+  if (!product) return report;
+  const header = { ...report.header };
+  for (const key of PRODUCT_FIELDS) if (String(product[key] || '').trim()) header[key] = String(product[key]);
   const results = {};
-  const source = product ? product.features : template.features;
-  const features = source.map(f => ({ ...f }));
+  const features = product.features.map(f => ({ ...f }));
   features.forEach(f => { results[f.id] = report.results[f.id] || blankResult(); });
-  return { ...report, templateId: template.id, templateName: template.name, features, results };
-}
-
-export function isLocked(template, key) {
-  const def = HEADER_FIELDS.find(f => f.key === key);
-  if (!def || !def.lockable) return false;
-  const policy = template.fields[key];
-  return Boolean(policy && policy.mode === 'fixed');
+  return { ...report, header, features, results };
 }
 
 /**
  * True when the report holds anything the user entered: a measurement, a remark,
- * or a header value that differs from what the template produced at creation.
+ * or a header value that differs from what the product produced at creation.
  */
 export function reportHasContent(report) {
   if (!report) return false;
   if (String(report.remarks || '').trim()) return true;
   const baseline = report.baseline || {};
   for (const key of HEADER_KEYS) {
-    if (key === 'inspectionDate' || key === 'reportNo') continue;
+    if (key === 'inspectionDate') continue;
     if (String(report.header[key] || '').trim() !== String(baseline[key] || '').trim()) return true;
   }
   return Object.values(report.results || {}).some(r => r && (String(r.min || '').trim() || String(r.max || '').trim() || r.outcome));
@@ -354,8 +324,7 @@ export function reportHasContent(report) {
 
 export function reportSampling(report) {
   const h = report.header;
-  const plan = samplingPlan(h.quantity, LEVELS.includes(h.inspectionLevel) ? h.inspectionLevel : 'II', h.aql);
-  return { plan, disposition: null };
+  return { plan: samplingPlan(h.quantity, LEVELS.includes(h.inspectionLevel) ? h.inspectionLevel : 'II', h.aql) };
 }
 
 /** Header-level validation warnings (keys, translated by the UI). */
@@ -374,15 +343,12 @@ export function headerWarnings(report) {
 
 /** Overall report status: 'pass' | 'fail' | 'incomplete'. */
 export function reportStatus(report) {
-  const counts = summarize(report.features, report.results);
-  const { disposition } = reportSampling(report);
-  if (disposition === 'reject') return 'fail';
-  return counts.status;
+  return summarize(report.features, report.results).status;
 }
 
+/** Date as printed on the form: dd/mm/yy. */
 export function formatDateForReport(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
   if (!m) return String(iso || '');
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${Number(m[3])} ${months[Number(m[2]) - 1] || m[2]} ${m[1]}`;
+  return `${m[3]}/${m[2]}/${m[1].slice(2)}`;
 }

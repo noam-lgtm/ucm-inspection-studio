@@ -1,52 +1,33 @@
 /*
  * Local persistence: one JSON document in localStorage, strict normalisation
- * of anything read back (storage, backups, legacy v1 data), and backup files.
+ * of anything read back (storage, backups, sync), and backup files.
  */
 import {
-  HEADER_FIELDS, HEADER_KEYS, FEATURE_KINDS, UNITS, FIELD_MODES, MAX_FEATURES,
-  newId, defaultTemplate, defaultFieldPolicy, blankFeature, blankResult, createReport, blankProduct, PRODUCT_FIELDS,
+  HEADER_KEYS, FEATURE_KINDS, UNITS, MAX_FEATURES,
+  newId, blankFeature, blankResult, blankProduct, PRODUCT_FIELDS,
 } from './core.js';
 import { LEVELS } from './sampling.js';
 
 export const STORE_KEY = 'ucm.inspection.v2';
-export const LEGACY_KEY = 'ucm.inspection.local.v1';
 export const BACKUP_FORMAT = 'ucm-inspection-backup';
-export const MAX_TEMPLATES = 50;
 export const MAX_ARCHIVE = 500;
 export const MAX_PRODUCTS = 2000;
 export const MAX_IMPORT_BYTES = 12 * 1024 * 1024;
-const LOGO_RE = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
-const MAX_LOGO_CHARS = 800000;
 
 const str = (v, max) => String(v == null ? '' : v).slice(0, max);
 const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
 
 export function emptyState() {
-  const starter = defaultTemplate();
-  return { version: 2, templates: [starter], activeTemplateId: starter.id, draft: null, archive: [], products: [], settings: defaultSettings() };
+  return { version: 2, draft: null, archive: [], products: [], settings: defaultSettings() };
 }
 export function defaultSettings() {
-  return { lastBackupAt: '', migratedFromV1: false, sync: { url: '', key: '', cursor: '', lastSyncAt: '' }, dirty: {}, deleted: {}, autoAi: true };
-}
-
-export function normalizeProduct(raw) {
-  if (!isObj(raw) || !Array.isArray(raw.features)) throw new Error('product');
-  const p = blankProduct();
-  p.id = typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 120) : newId();
-  for (const key of PRODUCT_FIELDS) p[key] = str(raw[key], 240).trim();
-  if (p.inspectionLevel && !LEVELS.includes(p.inspectionLevel)) p.inspectionLevel = '';
-  p.features = raw.features.slice(0, MAX_FEATURES).map(normalizeFeature);
-  const seen = new Set();
-  p.features.forEach(f => { if (seen.has(f.id)) f.id = newId(); seen.add(f.id); });
-  p.sourceFileId = str(raw.sourceFileId, 120); p.sourceReportNo = str(raw.sourceReportNo, 80); p.notes = str(raw.notes, 2000);
-  p.createdAt = str(raw.createdAt, 40) || p.createdAt; p.updatedAt = str(raw.updatedAt, 40) || p.updatedAt;
-  if (raw.deleted) p.deleted = true;
-  return p;
+  return { lastBackupAt: '', sync: { url: '', key: '', cursor: '', lastSyncAt: '' }, dirty: {}, deleted: {}, autoAi: true };
 }
 
 export function normalizeFeature(raw) {
   if (!isObj(raw)) throw new Error('feature');
-  const kind = FEATURE_KINDS.includes(raw.kind) ? raw.kind : 'numeric';
+  // 'visual' rows from earlier versions are attribute checks too
+  const kind = FEATURE_KINDS.includes(raw.kind) ? raw.kind : (raw.kind === 'visual' ? 'gauge' : 'numeric');
   const f = blankFeature(kind);
   f.id = typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 120) : newId();
   f.label = str(raw.label, 200);
@@ -61,42 +42,18 @@ export function normalizeFeature(raw) {
   return f;
 }
 
-export function normalizeTemplate(raw) {
-  if (!isObj(raw) || !Array.isArray(raw.features)) throw new Error('template');
-  const t = defaultTemplate();
-  t.id = typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 120) : newId();
-  t.name = str(raw.name, 120).trim() || t.name;
-  t.updatedAt = str(raw.updatedAt, 40) || new Date().toISOString();
-  const company = isObj(raw.company) ? raw.company : {};
-  t.company = {
-    name: str(company.name, 200), tagline: str(company.tagline, 300), footer: str(company.footer, 500),
-    logo: typeof company.logo === 'string' && company.logo.length <= MAX_LOGO_CHARS && LOGO_RE.test(company.logo) ? company.logo : '',
-    standardName: str(company.standardName, 80) || 'MIL-STD-105D',
-  };
-  const numbering = isObj(raw.numbering) ? raw.numbering : {};
-  const next = Number(numbering.next);
-  t.numbering = {
-    mode: numbering.mode === 'manual' ? 'manual' : 'auto',
-    prefix: str(numbering.prefix, 40),
-    next: Number.isSafeInteger(next) && next >= 1 ? next : 1,
-    width: Number.isSafeInteger(Number(numbering.width)) ? Math.max(0, Math.min(8, Number(numbering.width))) : 4,
-  };
-  const policy = defaultFieldPolicy();
-  const fields = isObj(raw.fields) ? raw.fields : {};
-  for (const key of HEADER_KEYS) {
-    const p = isObj(fields[key]) ? fields[key] : null;
-    if (p) {
-      policy[key] = { mode: FIELD_MODES.includes(p.mode) ? p.mode : policy[key].mode, value: str(p.value, 240) };
-    }
-  }
-  if (!LEVELS.includes(policy.inspectionLevel.value)) policy.inspectionLevel.value = 'II';
-  for (const def of HEADER_FIELDS) if (!def.lockable) policy[def.key] = { mode: 'blank', value: '' };
-  t.fields = policy;
-  t.features = raw.features.slice(0, MAX_FEATURES).map(normalizeFeature);
+export function normalizeProduct(raw) {
+  if (!isObj(raw) || !Array.isArray(raw.features)) throw new Error('product');
+  const p = blankProduct();
+  p.id = typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 120) : newId();
+  for (const key of PRODUCT_FIELDS) p[key] = str(raw[key], 240).trim();
+  if (!LEVELS.includes(p.inspectionLevel)) p.inspectionLevel = 'II';
+  p.features = raw.features.slice(0, MAX_FEATURES).map(normalizeFeature);
   const seen = new Set();
-  t.features.forEach(f => { if (seen.has(f.id)) f.id = newId(); seen.add(f.id); });
-  if (!t.features.length) t.features = [blankFeature('numeric')];
-  return t;
+  p.features.forEach(f => { if (seen.has(f.id)) f.id = newId(); seen.add(f.id); });
+  p.sourceFileId = str(raw.sourceFileId, 120); p.sourceReportNo = str(raw.sourceReportNo, 80); p.notes = str(raw.notes, 2000);
+  p.createdAt = str(raw.createdAt, 40) || p.createdAt; p.updatedAt = str(raw.updatedAt, 40) || p.updatedAt;
+  return p;
 }
 
 export function normalizeReport(raw) {
@@ -104,7 +61,7 @@ export function normalizeReport(raw) {
   const header = {}, baseline = {};
   const rawBaseline = isObj(raw.baseline) ? raw.baseline : {};
   for (const key of HEADER_KEYS) { header[key] = str(raw.header[key], 240); baseline[key] = str(rawBaseline[key], 240); }
-  if (!LEVELS.includes(header.inspectionLevel)) header.inspectionLevel = header.inspectionLevel ? 'II' : '';
+  if (!LEVELS.includes(header.inspectionLevel)) header.inspectionLevel = 'II';
   const features = raw.features.slice(0, MAX_FEATURES).map(normalizeFeature);
   const results = {};
   const src = isObj(raw.results) ? raw.results : {};
@@ -120,88 +77,14 @@ export function normalizeReport(raw) {
   const now = new Date().toISOString();
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 120) : newId(),
-    templateId: str(raw.templateId, 120), templateName: str(raw.templateName, 120),
     productId: str(raw.productId, 120), productKey: str(raw.productKey, 300), sourceFileId: str(raw.sourceFileId, 120),
     createdAt: str(raw.createdAt, 40) || now, updatedAt: str(raw.updatedAt, 40) || now,
     header, baseline, features, results, remarks: str(raw.remarks, 4000),
   };
 }
 
-/** Convert the v1 prototype's localStorage document to v2. Returns null when not applicable. */
-export function migrateV1(raw) {
-  if (!isObj(raw) || raw.version !== 1 || !Array.isArray(raw.templates) || !raw.templates.length) return null;
-  const templates = [];
-  for (const old of raw.templates) {
-    if (!isObj(old) || !Array.isArray(old.features)) continue;
-    const t = defaultTemplate();
-    t.id = typeof old.id === 'string' && old.id ? old.id : newId();
-    t.name = str(old.name, 120) || t.name;
-    const c = isObj(old.company) ? old.company : {};
-    t.company.name = str(c.name, 200); t.company.tagline = str(c.tagline, 300); t.company.footer = str(c.footer, 500);
-    t.company.logo = typeof c.logo === 'string' && LOGO_RE.test(c.logo) && c.logo.length <= MAX_LOGO_CHARS ? c.logo : '';
-    t.numbering = { mode: 'manual', prefix: '', next: 1, width: 4 };
-    const defaults = isObj(old.defaults) ? old.defaults : {};
-    const keep = isObj(old.keep) ? old.keep : {};
-    for (const def of HEADER_FIELDS) {
-      if (!def.lockable) continue;
-      const value = str(defaults[def.key], 240);
-      t.fields[def.key] = { mode: keep[def.key] ? 'fixed' : (value ? 'default' : t.fields[def.key].mode), value };
-    }
-    if (!LEVELS.includes(t.fields.inspectionLevel.value)) t.fields.inspectionLevel.value = 'II';
-    t.features = old.features.slice(0, MAX_FEATURES).map(f => {
-      if (!isObj(f)) return blankFeature('numeric');
-      const kind = f.kind === 'gauge' ? 'gauge' : 'numeric';
-      const nf = blankFeature(kind);
-      nf.id = typeof f.id === 'string' && f.id ? f.id : newId();
-      nf.method = str(f.method, 200);
-      nf.unit = f.unit === 'deg' ? 'deg' : (kind === 'numeric' ? 'mm' : '');
-      const required = str(f.required, 300).trim();
-      if (kind === 'numeric') {
-        const nominal = str(f.nominal, 40).trim(), minus = str(f.minus, 40).trim(), plus = str(f.plus, 40).trim();
-        nf.nominal = nominal;
-        nf.symmetric = Boolean(minus) && minus === plus;
-        nf.upper = plus;
-        nf.lower = minus ? (minus.startsWith('-') ? minus.slice(1) : '-' + minus) : '';
-        if (nf.lower === '-0') nf.lower = '0';
-        // The old free-text "required" is preserved as the label, unless it merely repeats the nominal.
-        const bare = required.replace(/[^\d.,+-/± ]/g, '').trim();
-        const repeatsNominal = required && nominal && (required === nominal || Number(required.replace(',', '.')) === Number(nominal.replace(',', '.')) || bare.startsWith(nominal));
-        nf.label = repeatsNominal ? '' : required;
-        if (!repeatsNominal && required) nf.note = 'Migrated: original requirement text "' + required + '"';
-      } else {
-        nf.label = required;
-      }
-      return nf;
-    });
-    if (!t.features.length) t.features = [blankFeature('numeric')];
-    templates.push(t);
-  }
-  if (!templates.length) return null;
-  const active = templates.find(t => t.id === raw.activeId) || templates[0];
-  let draft = null;
-  if (isObj(raw.report) && isObj(raw.report.header)) {
-    draft = createReport(active);
-    for (const key of HEADER_KEYS) if (raw.report.header[key] != null) draft.header[key] = str(raw.report.header[key], 240);
-    if (!LEVELS.includes(draft.header.inspectionLevel)) draft.header.inspectionLevel = 'II';
-    const m = isObj(raw.report.measurements) ? raw.report.measurements : {};
-    for (const f of draft.features) {
-      const r = isObj(m[f.id]) ? m[f.id] : {};
-      draft.results[f.id] = { ...blankResult(), min: str(r.min, 80), max: str(r.max, 80), outcome: ['pass', 'fail'].includes(r.outcome) ? r.outcome : '' };
-    }
-    draft.remarks = str(raw.report.remarks, 4000);
-    draft.createdAt = str(raw.report.createdAt, 40) || draft.createdAt;
-  }
-  return { version: 2, templates, activeTemplateId: active.id, draft, archive: [], products: [], settings: { ...defaultSettings(), migratedFromV1: true } };
-}
-
 export function normalizeState(raw) {
-  if (!isObj(raw) || raw.version !== 2 || !Array.isArray(raw.templates)) throw new Error('state');
-  const templates = [];
-  for (const t of raw.templates.slice(0, MAX_TEMPLATES)) { try { templates.push(normalizeTemplate(t)); } catch (_) { /* skip broken template */ } }
-  if (!templates.length) templates.push(defaultTemplate());
-  const seen = new Set();
-  templates.forEach(t => { if (seen.has(t.id)) t.id = newId(); seen.add(t.id); });
-  const active = templates.find(t => t.id === raw.activeTemplateId) || templates[0];
+  if (!isObj(raw) || raw.version !== 2) throw new Error('state');
   let draft = null;
   if (raw.draft) { try { draft = normalizeReport(raw.draft); } catch (_) { draft = null; } }
   const archive = [];
@@ -218,12 +101,12 @@ export function normalizeState(raw) {
   products.forEach(p => { if (pids.has(p.id)) p.id = newId(); pids.add(p.id); });
   const settings = isObj(raw.settings) ? raw.settings : {};
   return {
-    version: 2, templates, activeTemplateId: active.id, draft, archive, products,
+    version: 2, draft, archive, products,
     settings: {
-      lastBackupAt: str(settings.lastBackupAt, 40), migratedFromV1: Boolean(settings.migratedFromV1),
+      lastBackupAt: str(settings.lastBackupAt, 40),
       sync: isObj(settings.sync) ? { url: str(settings.sync.url, 300), key: str(settings.sync.key, 300), cursor: str(settings.sync.cursor, 40), lastSyncAt: str(settings.sync.lastSyncAt, 40) } : { url: '', key: '', cursor: '', lastSyncAt: '' },
-      dirty: isObj(settings.dirty) ? Object.fromEntries(Object.entries(settings.dirty).filter(([, v]) => v === true).slice(0, 5000)) : {},
-      deleted: isObj(settings.deleted) ? Object.fromEntries(Object.entries(settings.deleted).filter(([, v]) => typeof v === 'string').slice(0, 5000)) : {},
+      dirty: isObj(settings.dirty) ? Object.fromEntries(Object.entries(settings.dirty).filter(([k, v]) => v === true && !k.startsWith('template:')).slice(0, 5000)) : {},
+      deleted: isObj(settings.deleted) ? Object.fromEntries(Object.entries(settings.deleted).filter(([k, v]) => typeof v === 'string' && !k.startsWith('template:')).slice(0, 5000)) : {},
       autoAi: settings.autoAi !== false,
     },
   };
@@ -231,13 +114,9 @@ export function normalizeState(raw) {
 
 /** Read state from a Storage-like object (getItem/setItem). Never throws. */
 export function loadState(storage) {
-  let v2 = null;
-  try { v2 = JSON.parse(storage.getItem(STORE_KEY) || 'null'); } catch (_) { v2 = null; }
-  if (v2) { try { return normalizeState(v2); } catch (_) { /* fall through */ } }
-  let v1 = null;
-  try { v1 = JSON.parse(storage.getItem(LEGACY_KEY) || 'null'); } catch (_) { v1 = null; }
-  const migrated = migrateV1(v1);
-  if (migrated) { try { return normalizeState(migrated); } catch (_) { /* fall through */ } }
+  let raw = null;
+  try { raw = JSON.parse(storage.getItem(STORE_KEY) || 'null'); } catch (_) { raw = null; }
+  if (raw) { try { return normalizeState(raw); } catch (_) { /* fall through */ } }
   return emptyState();
 }
 
@@ -247,48 +126,30 @@ export function saveState(storage, state) {
 
 // ---------- backups ----------
 
-export function buildBackup(state, { includeReports = true } = {}) {
+export function buildBackup(state) {
   return {
     format: BACKUP_FORMAT, version: 2, exportedAt: new Date().toISOString(),
-    templates: state.templates, activeTemplateId: state.activeTemplateId,
-    products: state.products || [],
-    archive: includeReports ? state.archive : [],
-    draft: includeReports ? state.draft : null,
+    products: state.products || [], archive: state.archive, draft: state.draft,
   };
 }
 
-/** Parse backup text (v2 backup, or the v1 "ucm-inspection-templates" export). Throws on invalid input. */
+/** Parse backup text. Throws on invalid input. */
 export function parseBackup(text) {
   if (typeof text !== 'string' || text.length > MAX_IMPORT_BYTES) throw new Error('size');
   const data = JSON.parse(text);
-  if (!isObj(data)) throw new Error('format');
-  if (data.format === 'ucm-inspection-templates' && data.version === 1 && Array.isArray(data.templates)) {
-    const migrated = migrateV1({ version: 1, templates: data.templates, activeId: data.activeId, report: null });
-    if (!migrated) throw new Error('format');
-    return { templates: migrated.templates, products: [], archive: [], draft: null, legacy: true };
-  }
-  if (data.format !== BACKUP_FORMAT || data.version !== 2 || !Array.isArray(data.templates)) throw new Error('format');
-  const templates = data.templates.slice(0, MAX_TEMPLATES).map(normalizeTemplate);
+  if (!isObj(data) || data.format !== BACKUP_FORMAT || data.version !== 2) throw new Error('format');
   const archive = Array.isArray(data.archive) ? data.archive.slice(0, MAX_ARCHIVE).map(normalizeReport) : [];
   let draft = null;
   if (data.draft) { try { draft = normalizeReport(data.draft); } catch (_) { draft = null; } }
   const products = Array.isArray(data.products) ? data.products.slice(0, MAX_PRODUCTS).map(normalizeProduct) : [];
-  if (!templates.length) throw new Error('empty');
-  return { templates, products, archive, draft, legacy: false };
+  return { products, archive, draft };
 }
 
 /**
- * Merge a parsed backup into state: templates and reports with the same id are
- * replaced, new ones are added, nothing is deleted. Returns a new state and counts.
+ * Merge a parsed backup into state: products and reports with the same id are
+ * replaced (products only by a newer copy), new ones are added, nothing is deleted.
  */
 export function mergeBackup(state, backup) {
-  const templates = state.templates.map(t => ({ ...t }));
-  let addedTemplates = 0, updatedTemplates = 0;
-  for (const t of backup.templates) {
-    const i = templates.findIndex(x => x.id === t.id);
-    if (i === -1) { if (templates.length < MAX_TEMPLATES) { templates.push(t); addedTemplates++; } }
-    else { templates[i] = t; updatedTemplates++; }
-  }
   const archive = state.archive.map(r => ({ ...r }));
   let addedReports = 0, updatedReports = 0;
   for (const r of backup.archive) {
@@ -296,7 +157,6 @@ export function mergeBackup(state, backup) {
     if (i === -1) { archive.push(r); addedReports++; } else { archive[i] = r; updatedReports++; }
   }
   archive.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-  const trimmed = archive.slice(0, MAX_ARCHIVE);
   const products = (state.products || []).map(p => ({ ...p }));
   let addedProducts = 0, updatedProducts = 0;
   for (const p of backup.products || []) {
@@ -305,9 +165,8 @@ export function mergeBackup(state, backup) {
     else if (String(p.updatedAt) >= String(products[i].updatedAt)) { products[i] = p; updatedProducts++; }
   }
   const draft = state.draft || backup.draft || null;
-  const activeTemplateId = templates.some(t => t.id === state.activeTemplateId) ? state.activeTemplateId : templates[0].id;
   return {
-    state: { ...state, templates, archive: trimmed, draft, activeTemplateId, products },
-    counts: { addedTemplates, updatedTemplates, addedReports, updatedReports, addedProducts, updatedProducts },
+    state: { ...state, archive: archive.slice(0, MAX_ARCHIVE), draft, products },
+    counts: { addedReports, updatedReports, addedProducts, updatedProducts },
   };
 }
