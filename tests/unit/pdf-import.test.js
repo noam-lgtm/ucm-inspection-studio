@@ -24,6 +24,7 @@ test('real report MM606207C rev C: header and all 12 rows are recovered from the
   assert.equal(v('productionOrder'), '0');
   assert.equal(v('aql'), '2.5');
   assert.equal(v('sampleSize'), '32');
+  assert.equal(v('totalInspected'), '32');
   assert.equal(v('accepted'), '32');
   assert.equal(v('rejected'), '0');
   assert.equal(v('generalTolerance'), '±0.1');

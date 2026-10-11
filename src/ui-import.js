@@ -10,7 +10,7 @@ import { LEVELS } from './sampling.js';
 
 const attr = esc;
 const option = (v, label, sel) => `<option value="${attr(v)}"${sel ? ' selected' : ''}>${esc(label)}</option>`;
-const FIELD_ORDER = ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql', 'reportNo', 'inspectionDate', 'inspector', 'purchaseOrder', 'productionOrder', 'quantity', 'sampleSize', 'accepted', 'rejected'];
+const FIELD_ORDER = ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql', 'reportNo', 'inspectionDate', 'inspector', 'purchaseOrder', 'productionOrder', 'quantity', 'sampleSize', 'totalInspected', 'accepted', 'rejected'];
 const PRODUCT_KEYS = ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql'];
 
 export function newImportState() {
@@ -284,7 +284,7 @@ async function saveImport(ctx, then) {
   if (im.saveReport) {
     const tpl = ctx.activeTemplate();
     const report = Core.createReport(tpl, null, new Date(), saved);
-    for (const key of ['reportNo', 'inspectionDate', 'inspector', 'purchaseOrder', 'productionOrder', 'quantity', 'accepted', 'rejected', 'customer']) {
+    for (const key of ['reportNo', 'inspectionDate', 'inspector', 'purchaseOrder', 'productionOrder', 'quantity', 'totalInspected', 'accepted', 'rejected', 'customer']) {
       if (d.fields[key] && d.fields[key].value) report.header[key] = d.fields[key].value;
     }
     report.features = d.features.map(f => ({ ...f.feature }));

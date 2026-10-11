@@ -60,6 +60,10 @@ sw.js                 offline cache (bump VERSION on release)
 tests/unit, tests/e2e
 ```
 
+## Sync server setup (Hebrew, step by step)
+
+ראו `docs/הקמת-סנכרון.md`: שלוש פקודות בתיקיית `worker` מקימות את השרת החינמי ב-Cloudflare.
+
 ## Deployment
 
 GitHub Pages serves the `main` branch root. Merging to `main` publishes. Bump `VERSION` in `sw.js` on every release so installed clients refresh their cache.

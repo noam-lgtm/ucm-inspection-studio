@@ -54,6 +54,7 @@ export const HE = {
   f_generalTolerance: 'טולרנס כללי',
   f_aql: 'AQL',
   f_inspectionLevel: 'רמת בדיקה',
+  f_totalInspected: 'סה"כ נבדקו',
   f_accepted: 'כמות מאושרת',
   f_rejected: 'כמות פסולה',
   aql_other: 'אחר (ללא חישוב Ac/Re)',

@@ -27,6 +27,7 @@ export const HEADER_FIELDS = Object.freeze([
   { key: 'generalTolerance', en: 'General tolerance', lockable: true },
   { key: 'aql', en: 'AQL', lockable: true },
   { key: 'inspectionLevel', en: 'Inspection level', lockable: true, type: 'level' },
+  { key: 'totalInspected', en: 'Total inspected', lockable: false, numeric: true },
   { key: 'accepted', en: 'Accepted qty', lockable: false, numeric: true },
   { key: 'rejected', en: 'Rejected qty', lockable: false, numeric: true },
 ]);
@@ -363,9 +364,9 @@ export function headerWarnings(report) {
   const warnings = [];
   const lot = h.quantity ? Number(String(h.quantity).replace(/[\s,]/g, '')) : null;
   const intOrNull = v => (String(v || '').trim() === '' ? null : (/^\d+$/.test(String(v).trim()) ? Number(v) : Number.NaN));
-  const acc = intOrNull(h.accepted), rej = intOrNull(h.rejected);
+  const acc = intOrNull(h.accepted), rej = intOrNull(h.rejected), tot = intOrNull(h.totalInspected);
   if (String(h.quantity || '').trim() && !(Number.isSafeInteger(lot) && lot >= 1)) warnings.push('quantity-invalid');
-  if (Number.isNaN(acc) || Number.isNaN(rej)) warnings.push('counts-invalid');
+  if (Number.isNaN(acc) || Number.isNaN(rej) || Number.isNaN(tot)) warnings.push('counts-invalid');
   if (Number.isSafeInteger(lot) && acc !== null && rej !== null && !Number.isNaN(acc) && !Number.isNaN(rej) && acc + rej > lot) warnings.push('counts-exceed-lot');
   if (String(h.inspectionDate || '').trim() && !/^\d{4}-\d{2}-\d{2}$/.test(h.inspectionDate)) warnings.push('date-invalid');
   return warnings;

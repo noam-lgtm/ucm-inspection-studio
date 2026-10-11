@@ -6,6 +6,7 @@ import {
   evaluateFeature, requirementText, limitsText, featureLimits, formatNumber, summarize,
   reportSampling, formatDateForReport, unitLabel, parseMeasurement,
 } from './core.js';
+import { DEFAULT_LOGO } from './logo-default.js';
 
 export function escapeHtml(value) {
   return String(value == null ? '' : value)
@@ -33,9 +34,10 @@ function measuredCell(feature, value, lim) {
   return esc(text);
 }
 
+/** Company logo: the uploaded one, or the UCM logo shipped with the app (as in the original prototype). */
 function logoImg(company) {
-  if (!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(company.logo || '')) return '';
-  return `<img class="rs-logo" src="${esc(company.logo)}" alt="">`;
+  const custom = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(company.logo || '');
+  return `<img class="rs-logo" src="${custom ? esc(company.logo) : DEFAULT_LOGO}" alt="">`;
 }
 
 /** Suggested file name for the saved PDF. */
@@ -93,6 +95,7 @@ export function renderReportSheet(template, report) {
   } else {
     samplingCells.push(['CODE LETTER', dash], ['SAMPLE SIZE', dash], ['Ac / Re', dash]);
   }
+  samplingCells.push(['TOTAL INSPECTED', show(h.totalInspected)]);
   samplingCells.push(['ACCEPTED QTY', show(h.accepted)]);
   samplingCells.push(['REJECTED QTY', show(h.rejected)]);
 
@@ -113,6 +116,7 @@ export function renderReportSheet(template, report) {
   const headerFacts = [
     ['CUSTOMER', h.customer], ['PURCHASE ORDER', h.purchaseOrder], ['PRODUCTION ORDER', h.productionOrder], ['LOT QUANTITY', h.quantity],
     ['CATALOG No.', h.catalogNo], ['PART No.', h.partNo], ['PART NAME', h.partName], ['REVISION', h.revision],
+    ['GENERAL TOLERANCE', h.generalTolerance], ['INSPECTOR', h.inspector], ['DATE', formatDateForReport(h.inspectionDate)], ['TOTAL INSPECTED', h.totalInspected],
   ];
 
   const runningHeader = `<div class="rs-running"><span>${esc(company.name || '')}</span><span>FINAL INSPECTION REPORT ${esc(h.reportNo || '')}</span><span>${esc(h.partNo ? 'Part ' + h.partNo : '')}</span></div>`;

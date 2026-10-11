@@ -309,6 +309,7 @@ export function buildImportDraft(pages) {
   set('accepted', (/(\d+)/.exec(val('accepted')) || [])[1] || '', header.accepted ? 0.85 : 0, header.accepted);
   set('rejected', (/(\d+)/.exec(val('rejected')) || [])[1] || '', header.rejected ? 0.85 : 0, header.rejected);
   set('sampleSize', (/(\d+)/.exec(val('sampleSize')) || [])[1] || '', header.sampleSize ? 0.85 : 0, header.sampleSize);
+  set('totalInspected', (/(\d+)/.exec(val('totalInspected')) || [])[1] || '', header.totalInspected ? 0.85 : 0, header.totalInspected);
 
   const features = rows.map(r => {
     const { feature, confidence, reasons } = interpretRequirement(r.required, r.tolMinus, r.tolPlus, r.method);

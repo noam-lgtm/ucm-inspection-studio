@@ -71,6 +71,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .panel-foot { padding: 12px 20px; border-top: 1px solid var(--line-soft); display: flex; gap: 8px; flex-wrap: wrap; }
 .field-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 14px; }
 .field-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; }
+.field-grid.two .field:first-child { grid-column: 1 / -1; }
 .field-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .field { display: grid; gap: 6px; min-width: 0; align-content: start; }
 .field.span2 { grid-column: span 2; }
