@@ -344,9 +344,9 @@ export function buildImportDraft(pages) {
 export function draftToProduct(draft, overrides = {}) {
   const p = blankProduct();
   for (const key of ['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'generalTolerance', 'aql']) {
-    p[key] = String((overrides[key] ?? (draft.fields[key] && draft.fields[key].value)) || '').trim();
+    p[key] = String((overrides[key] ?? (draft.fields[key] && draft.fields[key].value)) || '').trim() || p[key];
   }
-  p.inspectionLevel = overrides.inspectionLevel || '';
+  p.inspectionLevel = overrides.inspectionLevel || 'II';
   p.features = draft.features.map(f => ({ ...f.feature, id: f.feature.id || newId() }));
   p.sourceReportNo = String(draft.fields.reportNo ? draft.fields.reportNo.value : '');
   return p;

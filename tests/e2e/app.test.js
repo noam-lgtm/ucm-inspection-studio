@@ -40,38 +40,98 @@ async function setMeasure(i, min, max) {
 }
 const rowStatus = async i => { const id = await featureId(i); return page.textContent(`tr[data-row="${id}"] .row-status`); };
 const hasPdfTools = (() => { try { execFileSync('pdftotext', ['-v'], { stdio: 'ignore' }); return true; } catch (_) { return false; } })();
+const pdfText = (file, extra = []) => execFileSync('pdftotext', [...extra, '-layout', file, '-']).toString();
 
-test('loads without console errors and shows the starter template', async () => {
+/** Create a product by hand (two rows) and open a report for it. */
+async function createProductAndReport(partNo = 'P-100') {
+  await page.click('.side-nav [data-tab="products"]');
+  await page.click('[data-action="product-new"]');
+  await fill('input[name="pr:partNo"]', partNo);
+  await fill('input[name="pr:revision"]', 'A');
+  await fill('input[name="pr:partName"]', 'Bracket');
+  await fill('input[name="pr:customer"]', 'Acme Ltd');
+  await fill('input[name="pr:catalogNo"]', 'CAT-100');
+  await page.waitForTimeout(450);
+  const fid = await page.evaluate(() => window.UCM.state.products[0].features[0].id);
+  await fill(`input[name="f:label"][data-fid="${fid}"]`, 'Length');
+  await fill(`input[name="f:nominal"][data-fid="${fid}"]`, '25.00');
+  await fill(`input[name="f:upper"][data-fid="${fid}"]`, '0.10');
+  await fill(`input[name="f:method"][data-fid="${fid}"]`, 'Caliper');
+  await page.click('[data-action="feature-add"][data-kind="gauge"]');
+  const gid = await page.evaluate(() => window.UCM.state.products[0].features[1].id);
+  await fill(`input[name="f:label"][data-fid="${gid}"]`, 'M8x1.25-6H');
+  await fill(`input[name="f:method"][data-fid="${gid}"]`, 'Thread plug gage');
+  await page.waitForTimeout(350);
+  await page.click('[data-action="product-report"]');
+  await page.waitForSelector('#h_reportNo');
+}
+
+test('loads without console errors; without products the report tab offers the PDF import', async () => {
   await page.goto(url, { waitUntil: 'networkidle' });
   assert.deepEqual(page.__errors, []);
   assert.equal(await page.title(), 'UCM Inspection Studio');
-  assert.equal(await page.inputValue('#h_reportNo'), 'FIR-0001');
-  assert.equal((await page.$$('tr[data-row]')).length, 4);
-  assert.ok(await page.$('#h_partNo:disabled'), 'fixed field is locked');
-  assert.ok(await page.$('#h_quantity:not(:disabled)'), 'quantity is never locked');
+  assert.ok(await page.$('.empty-start [data-action="go-import"]'));
+  assert.equal((await page.$$('.side-nav [data-tab]')).length, 4, 'four tabs only: report, products, archive, settings');
+  assert.equal(await page.$('[data-tab="templates"]'), null, 'templates are gone');
 });
 
-test('sampling: lot 60 / level II / AQL 2.5 follows the Table II-A arrow to code D (n=8, Ac 0 Re 1)', async () => {
+test('product editor: required text follows the drawing notation; a report opens from the product with locked product fields', async () => {
   await page.goto(url, { waitUntil: 'networkidle' });
+  await createProductAndReport();
+  const s = await uiState();
+  assert.equal(s.products.length, 1);
+  assert.equal(s.products[0].inspectionLevel, 'II');
+  assert.equal(s.products[0].aql, '2.5');
+  assert.equal(await page.inputValue('#h_partNo'), 'P-100');
+  assert.ok(await page.$('#h_partNo:disabled') && await page.$('#h_revision:disabled') && await page.$('#h_aql:disabled'), 'product fields are locked on the report');
+  assert.ok(await page.$('#h_quantity:not(:disabled)') && await page.$('#h_customer:not(:disabled)'));
+  assert.equal(await page.inputValue('#h_customer'), 'Acme Ltd', 'customer comes from the product');
+  assert.equal((await page.$$('tr[data-row]')).length, 2);
+  assert.match(await page.textContent('tr[data-row] .req'), /Length 25\.00/);
+  assert.match(await page.textContent('tr[data-row] .lim'), /±0\.10/);
+  // Edit the product: the open draft follows
+  await page.click('[data-action="product-open-current"]');
+  const fid = await page.evaluate(() => window.UCM.state.products[0].features[0].id);
+  await page.selectOption(`select[name="f:symmetric"][data-fid="${fid}"]`, '0');
+  await fill(`input[name="f:upper"][data-fid="${fid}"]`, '0.10');
+  await fill(`input[name="f:lower"][data-fid="${fid}"]`, '0.05');
+  assert.match(await page.textContent(`.fe-row[data-feature="${fid}"] .fe-preview`), /Length 25\.00 \+0\.10 \/ \+0\.05 \(25\.05 – 25\.10\)/);
+  await fill(`input[name="f:lower"][data-fid="${fid}"]`, '0.20');
+  assert.match(await page.textContent(`.fe-row[data-feature="${fid}"] .fe-preview`), /התחתון גדול מהעליון/);
+  await fill(`input[name="f:lower"][data-fid="${fid}"]`, '0.05');
+  await page.click('[data-action="feature-add"][data-kind="numeric"]');
+  await page.click('.side-nav [data-tab="report"]');
+  assert.equal((await page.$$('tr[data-row]')).length, 3);
+  await setMeasure(0, '25.06', '25.09');
+  assert.match(await rowStatus(0), /בטווח/);
+  await setMeasure(0, '25.00', '25.09');
+  assert.match(await rowStatus(0), /חריגה/, 'a value equal to the nominal but below the shifted lower limit fails');
+  await setMeasure(2, '1', '1');
+  assert.match(await rowStatus(2), /לבדיקה/, 'a row without a definition never passes');
+  assert.match(await page.textContent('#warnings'), /הגדרה חסרה/);
+  assert.deepEqual(page.__errors, []);
+});
+
+test('sampling line: lot 60 / level II / AQL 2.5 follows the Table II-A arrow to code D (n=8, Ac 0 Re 1)', async () => {
+  await page.goto(url, { waitUntil: 'networkidle' });
+  await createProductAndReport();
   await fill('#h_quantity', '60');
-  assert.equal((await page.textContent('.sample-big')).trim(), '8');
-  const foot = await page.textContent('.sample-foot');
-  assert.match(foot, /E/); assert.match(foot, /n=13/); assert.match(foot, /Ac 0 \/ Re 1/);
-  assert.ok((await page.textContent('#samplingPanel')).includes('(D)'), 'arrow note names the plan letter');
+  assert.match(await page.textContent('#samplingLine'), /גודל מדגם: 8 \(אות D, Ac 0 \/ Re 1\)/);
   await fill('#h_quantity', '400');
-  assert.equal((await page.textContent('.sample-big')).trim(), '50');
-  assert.match(await page.textContent('.sample-foot'), /Ac 3 \/ Re 4/);
+  assert.match(await page.textContent('#samplingLine'), /גודל מדגם: 50 \(אות H, Ac 3 \/ Re 4\)/);
+  await fill('#h_quantity', '250');
+  assert.match(await page.textContent('#samplingLine'), /גודל מדגם: 32/, 'lot 250 -> 32 as printed on the original UCM report');
   await fill('#h_quantity', '5');
-  assert.equal((await page.textContent('.sample-big')).trim(), '5');
-  assert.match(await page.textContent('#samplingPanel'), /100%/);
+  assert.match(await page.textContent('#samplingLine'), /100%/);
   await fill('#h_quantity', '1');
-  assert.equal((await page.textContent('.sample-big')).trim(), '1');
+  assert.match(await page.textContent('#samplingLine'), /יחידה אחת/);
   await fill('#h_quantity', 'abc');
   assert.match(await page.textContent('#warnings'), /מספר שלם/);
 });
 
 test('measurement entry: verdicts, keyboard flow, copy-min, GO/NO-GO, persistence across reload', async () => {
   await page.goto(url, { waitUntil: 'networkidle' });
+  await createProductAndReport();
   await setMeasure(0, '24.95', '25.05');
   assert.match(await rowStatus(0), /בטווח/);
   await setMeasure(0, '24.95', '25.11');
@@ -81,237 +141,145 @@ test('measurement entry: verdicts, keyboard flow, copy-min, GO/NO-GO, persistenc
   await setMeasure(0, '24,95', 'Ø25.05');
   assert.match(await rowStatus(0), /בטווח/);
   // Enter in an empty max copies min and moves on
-  const id1 = await featureId(1);
-  await fill(`input[data-measure="min"][data-id="${id1}"]`, '10.02');
-  await page.focus(`input[data-measure="max"][data-id="${id1}"]`);
+  const id0 = await featureId(0);
+  await fill(`input[data-measure="max"][data-id="${id0}"]`, '');
+  await page.focus(`input[data-measure="max"][data-id="${id0}"]`);
   await page.keyboard.press('Enter');
-  assert.equal(await page.inputValue(`input[data-measure="max"][data-id="${id1}"]`), '10.02');
-  assert.match(await rowStatus(1), /בטווח/);
-  // GO/NO-GO buttons
-  const id2 = await featureId(2);
-  await page.click(`[data-outcome="fail"][data-id="${id2}"]`);
-  assert.match(await rowStatus(2), /חריגה/);
-  await page.click(`[data-outcome="pass"][data-id="${id2}"]`);
-  assert.match(await rowStatus(2), /עובר/);
-  const id3 = await featureId(3);
-  await page.click(`[data-outcome="pass"][data-id="${id3}"]`);
-  assert.match(await page.textContent('#summaryPanel'), /הדוח תקין/);
+  assert.equal(await page.inputValue(`input[data-measure="max"][data-id="${id0}"]`), '24,95');
+  assert.match(await rowStatus(0), /בטווח/);
+  const id1 = await featureId(1);
+  await page.click(`[data-outcome="fail"][data-id="${id1}"]`);
+  assert.match(await rowStatus(1), /חריגה/);
+  assert.match(await page.textContent('#statusPill'), /חריגות/);
+  await page.click(`[data-outcome="pass"][data-id="${id1}"]`);
+  assert.match(await rowStatus(1), /עובר/);
+  assert.match(await page.textContent('#statusPill'), /כל המידות בטווח/);
   await fill('#remarks', 'הערה בעברית');
   await page.waitForTimeout(400);
   await page.reload({ waitUntil: 'networkidle' });
-  assert.equal(await page.inputValue(`input[data-measure="max"][data-id="${id1}"]`), '10.02');
-  assert.match(await rowStatus(2), /עובר/);
+  assert.equal(await page.inputValue(`input[data-measure="max"][data-id="${id0}"]`), '24,95');
+  assert.match(await rowStatus(1), /עובר/);
   assert.equal(await page.inputValue('#remarks'), 'הערה בעברית');
   assert.deepEqual(page.__errors, []);
 });
 
-test('new report: archive, numbering, carry-over and fixed fields', async () => {
+test('new report: previous one is archived, the inspector carries over, lot data does not; archive reopen and delete', async () => {
   await page.goto(url, { waitUntil: 'networkidle' });
-  await fill('#h_customer', 'Acme Ltd');
+  await createProductAndReport();
+  await fill('#h_reportNo', '9515_2');
+  await fill('#h_inspector', 'Yuri S.');
   await fill('#h_purchaseOrder', 'PO-55');
   await fill('#h_quantity', '100');
   await setMeasure(0, '25', '25');
   await page.click('[data-action="new-report"]');
   await page.waitForSelector('#h_reportNo');
-  assert.equal(await page.inputValue('#h_reportNo'), 'FIR-0002');
-  assert.equal(await page.inputValue('#h_customer'), 'Acme Ltd', 'carry-over field');
-  assert.equal(await page.inputValue('#h_purchaseOrder'), 'PO-55');
-  assert.equal(await page.inputValue('#h_quantity'), '', 'quantity never carries');
+  assert.equal(await page.inputValue('#h_reportNo'), '');
+  assert.equal(await page.inputValue('#h_inspector'), 'Yuri S.', 'the inspector carries over');
+  assert.equal(await page.inputValue('#h_purchaseOrder'), '');
+  assert.equal(await page.inputValue('#h_quantity'), '');
+  assert.equal(await page.inputValue('#h_partNo'), 'P-100', 'same product');
   const s = await uiState();
   assert.equal(s.archive.length, 1);
-  assert.equal(s.archive[0].header.reportNo, 'FIR-0001');
-  assert.equal(s.templates[0].numbering.next, 2);
-  // Archive tab lists it and can reopen it
-  await page.click('[data-tab="archive"]');
-  assert.match(await page.textContent('table.list'), /FIR-0001/);
+  assert.equal(s.archive[0].header.reportNo, '9515_2');
+  await page.click('.side-nav [data-tab="archive"]');
+  assert.match(await page.textContent('table.list'), /9515_2/);
   assert.match(await page.textContent('table.list'), /Acme Ltd/);
   await page.click('[data-action="archive-open"]');
   await page.waitForSelector('#h_reportNo');
-  assert.equal(await page.inputValue('#h_reportNo'), 'FIR-0001');
-  const s2 = await uiState();
-  assert.equal(s2.archive.length, 0, 'the empty FIR-0002 draft was not archived');
-});
-
-test('template editor: edits flow into the draft; required text follows nominal; fixed field value locks the report', async () => {
-  await page.goto(url, { waitUntil: 'networkidle' });
-  await page.click('[data-tab="templates"]');
-  const fid = await page.evaluate(() => window.UCM.state.templates[0].features[0].id);
-  await fill(`input[name="f:nominal"][data-fid="${fid}"]`, '30.00');
-  await fill(`input[name="f:upper"][data-fid="${fid}"]`, '0.05');
-  await fill(`input[name="f:label"][data-fid="${fid}"]`, 'Length');
-  assert.match(await page.textContent(`.fe-row[data-feature="${fid}"] .fe-preview`), /Length 30\.00 ±0\.05 mm \(29\.95 – 30\.05\)/);
-  // asymmetric
-  await page.selectOption(`select[name="f:symmetric"][data-fid="${fid}"]`, '0');
-  await fill(`input[name="f:upper"][data-fid="${fid}"]`, '0.10');
-  await fill(`input[name="f:lower"][data-fid="${fid}"]`, '0.05');
-  assert.match(await page.textContent(`.fe-row[data-feature="${fid}"] .fe-preview`), /30\.00 \+0\.10 \/ \+0\.05 mm \(30\.05 – 30\.10\)/);
-  // invalid: inverted
-  await fill(`input[name="f:lower"][data-fid="${fid}"]`, '0.20');
-  assert.match(await page.textContent(`.fe-row[data-feature="${fid}"] .fe-preview`), /התחתון גדול מהעליון/);
-  await fill(`input[name="f:lower"][data-fid="${fid}"]`, '0.05');
-  // fixed part number
-  await fill('input[name="p:value"][data-key="partNo"]', 'P-777');
-  await page.click('[data-action="feature-add"][data-kind="numeric"]');
-  await page.click('[data-tab="report"]');
-  assert.equal(await page.inputValue('#h_partNo'), 'P-777');
-  assert.ok(await page.$('#h_partNo:disabled'));
-  assert.equal((await page.$$('tr[data-row]')).length, 5);
-  assert.match(await page.textContent('tr[data-row] .req'), /Length 30\.00 \+0\.10 \/ \+0\.05/);
-  await setMeasure(0, '30.06', '30.09');
-  assert.match(await rowStatus(0), /בטווח/);
-  await setMeasure(0, '30.00', '30.09');
-  assert.match(await rowStatus(0), /חריגה/, 'a value equal to the nominal but below the shifted lower limit fails');
-  // new blank row cannot pass
-  await setMeasure(4, '1', '1');
-  assert.match(await rowStatus(4), /לבדיקה/);
-  assert.match(await page.textContent('#warnings'), /הגדרה חסרה/);
+  assert.equal(await page.inputValue('#h_reportNo'), '9515_2');
+  assert.equal((await uiState()).archive.length, 0, 'the empty draft was not archived');
+  await page.click('[data-action="new-report"]');
+  await page.waitForSelector('#h_reportNo');
+  await page.click('.side-nav [data-tab="archive"]');
+  await page.click('[data-action="archive-delete"]');
+  await page.waitForTimeout(100);
+  assert.equal((await uiState()).archive.length, 0);
   assert.deepEqual(page.__errors, []);
 });
 
 test('backup export and import round-trip (merge, nothing deleted)', async () => {
   await page.goto(url, { waitUntil: 'networkidle' });
+  await createProductAndReport();
   await fill('#h_customer', 'Backup Co');
   await page.click('[data-action="new-report"]');
   await page.waitForSelector('#h_reportNo');
+  await page.click('.side-nav [data-tab="settings"]');
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('[data-action="export-backup"]')]);
   const file = path.join(os.tmpdir(), 'ucm-backup-test.json');
   await download.saveAs(file);
   const data = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(data.format, 'ucm-inspection-backup');
   assert.equal(data.archive.length, 1);
-  assert.match(await page.textContent('#backupStatus'), /גיבוי אחרון/);
-  // fresh browser profile, import
+  assert.equal(data.products.length, 1);
   await context.close();
   context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'he-IL' });
   page = await context.newPage(); page.on('dialog', d => d.accept());
   await page.goto(url, { waitUntil: 'networkidle' });
+  await page.click('.side-nav [data-tab="settings"]');
   await page.setInputFiles('#importFile', file);
   await page.waitForTimeout(300);
   const s = await uiState();
   assert.equal(s.archive.length, 1);
   assert.equal(s.archive[0].header.customer, 'Backup Co');
-  assert.equal(s.templates.length, 2, 'starter template kept, imported template added');
+  assert.equal(s.products.length, 1);
 });
 
-test('v1 prototype localStorage is migrated on first load', async () => {
-  const v1 = {
-    version: 1, activeId: 't1',
-    templates: [{ id: 't1', name: 'Old', company: { name: 'Old Co', tagline: '', footer: '', logo: '' },
-      defaults: { reportNo: '', productionOrder: '', customer: '', quantity: '', purchaseOrder: '', catalogNo: '', partNo: 'OLD-1', partName: 'Old part', revision: '', inspector: '', inspectionDate: '', generalTolerance: '+/-0.1', aql: '2.5', inspectionLevel: 'II', accepted: '', rejected: '' },
-      keep: { partNo: true, partName: true, quantity: true, aql: true, inspectionLevel: true },
-      features: [{ id: 'a', kind: 'numeric', required: '12.00', nominal: '12', minus: '0.1', plus: '0.1', method: 'Caliper', unit: 'mm' }, { id: 'b', kind: 'gauge', required: 'M6', nominal: '', minus: '', plus: '', method: 'Plug', unit: '' }] }],
-    report: { header: { quantity: '30', customer: 'Legacy' }, measurements: { a: { min: '12.01', max: '12.02', outcome: '' }, b: { min: '', max: '', outcome: 'pass' } }, remarks: 'old remark', createdAt: '2026-09-01T00:00:00.000Z' },
-  };
+test('PDF: the original UCM form layout, A4, file name, "Page x from y" and repeated header on long reports', { skip: !hasPdfTools && 'pdftotext not installed' }, async () => {
   await page.goto(url, { waitUntil: 'networkidle' });
-  await page.evaluate(v1 => { localStorage.clear(); localStorage.setItem('ucm.inspection.local.v1', JSON.stringify(v1)); }, v1);
-  await page.reload({ waitUntil: 'networkidle' });
-  assert.equal(await page.inputValue('#h_partNo'), 'OLD-1');
-  assert.equal(await page.inputValue('#h_customer'), 'Legacy');
-  assert.equal(await page.inputValue('#h_quantity'), '30');
-  assert.ok(await page.$('#h_quantity:not(:disabled)'), 'v1 locked-empty quantity bug does not survive migration');
-  assert.match(await rowStatus(0), /בטווח/);
-  assert.match(await rowStatus(1), /עובר/);
-  assert.equal(await page.inputValue('#remarks'), 'old remark');
-  assert.deepEqual(page.__errors, []);
-});
-
-test('PDF: A4 output, file name, page numbering and repeated header on long reports', { skip: !hasPdfTools && 'pdftotext not installed' }, async () => {
-  await page.goto(url, { waitUntil: 'networkidle' });
-  await fill('#h_customer', 'PDF Customer');
-  await fill('#h_quantity', '120');
+  await createProductAndReport();
+  await fill('#h_reportNo', '9515_2');
+  await fill('#h_productionOrder', '0');
+  await fill('#h_purchaseOrder', 'PO23000834');
+  await fill('#h_quantity', '250');
+  await fill('#h_inspector', 'YURI S.');
+  await fill('#h_inspectionDate', '2023-09-06');
+  await fill('#h_totalInspected', '32'); await fill('#h_accepted', '32'); await fill('#h_rejected', '0');
   await fill('#remarks', 'שלום');
   await setMeasure(0, '24.95', '25.05');
-  const id2 = await featureId(2); await page.click(`[data-outcome="pass"][data-id="${id2}"]`);
-  const id3 = await featureId(3); await page.click(`[data-outcome="pass"][data-id="${id3}"]`);
-  await page.click('[data-tab="preview"]');
-  // The print button sets document.title to the suggested file name; do the same here so the PDF metadata carries it.
+  const id1 = await featureId(1); await page.click(`[data-outcome="pass"][data-id="${id1}"]`);
+  await page.click('[data-action="go-preview"]');
+  await page.waitForSelector('#previewPaper .rs-page');
   const fileName = await page.evaluate(() => { document.title = window.UCM.reportFileName(window.UCM.state.draft); return document.title; });
-  assert.equal(fileName, 'FIR-0001');
+  assert.equal(fileName, '9515_2_P-100');
+  assert.equal(await page.evaluate(() => { const i = document.querySelector('#previewPaper .rs-logo'); return i && i.complete && i.naturalWidth > 0; }), true, 'the UCM logo is on the sheet');
   await page.emulateMedia({ media: 'print' });
   const pdf1 = path.join(OUT, 'report-short.pdf');
   await page.pdf({ path: pdf1, format: 'A4', preferCSSPageSize: true, printBackground: true });
-  let text = execFileSync('pdftotext', ['-layout', pdf1, '-']).toString();
-  assert.match(text, /FINAL INSPECTION REPORT/);
-  assert.match(text, /PDF Customer/);
-  assert.match(text, /SAMPLE SIZE/);
-  assert.match(text, /CODE LETTER/);
-  assert.match(text, /\b20\b/, 'sample size 20 for lot 120 level II');
-  assert.match(text, /Ac \/ Re/);
-  assert.match(text, /GENERAL TOLERANCE/);
-  assert.match(text, /TOTAL INSPECTED/);
-  assert.equal(await page.evaluate(() => { const i = document.querySelector('#previewPaper .rs-logo'); return i && i.complete && i.naturalWidth > 0; }), true, 'the default company logo is loaded on the report sheet');
-  assert.match(text, /TOL/);
-  assert.match(text, /INCOMPLETE/);
-  assert.match(text, /Page 1 of 1/);
+  const text = pdfText(pdf1);
+  for (const expected of ['Page 1 of 1', 'FINAL INSPECTION REPORT', '9515_2', 'CUSTOMER', 'Acme Ltd', 'PURCHASE ORDER', 'PO23000834', 'PRODUCTION ORDER', 'LOT QUANTITY', '250',
+    'CATALOG No.', 'PART No.', 'P-100', 'PART NAME', 'Bracket', 'REVISION', 'GENERAL TOLERANCE', '±0.1', 'INSPECTOR', 'YURI S.', 'DATE', '06/09/23', 'TOTAL INSPECTED',
+    'SAMPLING PLAN', 'AQL', '2.5', 'CODE LETTER', 'SAMPLE SIZE', '32', 'Ac / Re', 'ACCEPTED QTY', 'REJECTED QTY',
+    'Required', 'TOL', 'Actual min', 'Actual max', 'Result', 'Length 25.00', '0.10', 'Caliper', '24.95', '25.05', 'M8x1.25-6H', 'Thread plug gage', 'GO', 'PASS – all characteristics within limits',
+    'REMARKS', 'NAME', 'SIGNATURE', 'MIL-STD-105D', 'Hidekel']) {
+    assert.ok(text.includes(expected), `missing "${expected}"`);
+  }
   assert.match(text, /שלום|םולש/, 'Hebrew remarks survive');
+  assert.ok(!text.includes('—'), 'no empty cells: every value of the report is printed');
   const info1 = execFileSync('pdfinfo', [pdf1]).toString();
   assert.match(info1, /Pages:\s+1/);
   assert.match(info1, /Page size:\s+59[45]\.\d+ x 84[12]\.\d+ pts \(A4\)/);
-  assert.match(info1, /Title:\s+FIR-0001/);
-  // Long report: 40 rows -> multiple pages, header repeated, no row split
+  assert.match(info1, /Title:\s+9515_2_P-100/);
+  // Long report: 40 more rows -> several pages, each with the title box and the table header, no lost rows
   await page.evaluate(() => {
-    const t = window.UCM.state.templates[0];
-    for (let i = 0; i < 40; i++) t.features.push({ ...window.UCM.Core.blankFeature('numeric'), label: 'Dim ' + (i + 5), nominal: String(10 + i), upper: '0.1', method: 'CMM' });
-    window.UCM.state.draft = window.UCM.Core.syncReportFeatures(window.UCM.state.draft, t);
+    const p = window.UCM.state.products[0];
+    for (let i = 0; i < 40; i++) p.features.push({ ...window.UCM.Core.blankFeature('numeric'), label: 'Dim', nominal: String(10 + i), upper: '0.1', method: 'CMM' });
+    window.UCM.state.draft = window.UCM.Core.syncReportWithProduct(window.UCM.state.draft, p);
     window.UCM.render();
   });
+  await page.waitForSelector('#previewPaper .rs-page[data-page="2"]', { state: 'attached' });
   const pdf2 = path.join(OUT, 'report-long.pdf');
   await page.pdf({ path: pdf2, format: 'A4', preferCSSPageSize: true, printBackground: true });
-  const info2 = execFileSync('pdfinfo', [pdf2]).toString();
-  const pages = Number(/Pages:\s+(\d+)/.exec(info2)[1]);
+  const pages = Number(/Pages:\s+(\d+)/.exec(execFileSync('pdfinfo', [pdf2]).toString())[1]);
   assert.ok(pages >= 2, 'long report spans pages');
-  text = execFileSync('pdftotext', ['-layout', pdf2, '-']).toString();
-  assert.match(text, new RegExp(`Page ${pages} of ${pages}`));
-  const page2 = execFileSync('pdftotext', ['-f', '2', '-l', '2', '-layout', pdf2, '-']).toString();
-  assert.match(page2, /FINAL INSPECTION REPORT FIR-0001/, 'running header repeats on page 2');
+  const all = pdfText(pdf2);
+  assert.ok(all.includes(`Page 1 of ${pages}`) && all.includes(`Page ${pages} of ${pages}`), 'page numbering matches the real page count');
+  assert.equal((all.match(/CMM/g) || []).length, 40, 'every row is printed exactly once');
+  const page2 = pdfText(pdf2, ['-f', '2', '-l', '2']);
+  assert.match(page2, /FINAL INSPECTION REPORT 9515_2/, 'running header repeats on page 2');
   assert.match(page2, /Required/, 'table header repeats on page 2');
-});
-
-test('templates: switch, duplicate, delete, logo upload, AQL "other"', async () => {
-  await page.goto(url, { waitUntil: 'networkidle' });
-  await fill('#h_customer', 'Switch Co');
-  await page.click('[data-tab="templates"]');
-  await page.click('[data-action="template-duplicate"]');
-  await fill('#tplName', 'Second template');
-  await page.waitForTimeout(450);
-  assert.match(await page.textContent('#quickTemplate'), /Second template/);
-  // logo upload: 1x1 PNG
-  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
-  await page.setInputFiles('#logoUpload', { name: 'logo.png', mimeType: 'image/png', buffer: png });
-  await page.waitForSelector('.logo-preview');
-  const logo = await page.evaluate(() => window.UCM.state.templates[1].company.logo);
-  assert.match(logo, /^data:image\/png;base64,/);
-  // AQL "other" on the template policy
-  await page.selectOption('select[name="p:aql"]', '__other');
-  await fill('input[name="p:aql__other"]', '0.4');
-  // use this template -> new report, previous archived
-  await page.click('[data-action="template-use"]');
-  await page.waitForSelector('#h_reportNo');
-  assert.equal(await page.inputValue('#h_aql__other'), '0.4');
-  await fill('#h_quantity', '100');
-  assert.equal((await page.textContent('.sample-big')).trim(), '20', 'Table I size shown for an unsupported AQL');
-  assert.match(await page.textContent('#samplingPanel'), /Ac\/Re יש לקרוא מהתקן/);
-  assert.ok(await page.$('.report-sheet .rs-logo'), 'logo appears on the printed sheet');
-  const s = await uiState();
-  assert.equal(s.archive.length, 1); assert.equal(s.archive[0].header.customer, 'Switch Co');
-  assert.equal(s.activeTemplateId, s.templates[1].id);
-  // archive duplicate and delete
-  await page.click('[data-tab="archive"]');
-  await page.click('[data-action="archive-duplicate"]');
-  await page.waitForSelector('#h_reportNo');
-  assert.equal(await page.inputValue('#h_customer'), 'Switch Co');
-  assert.equal((await uiState()).archive.length, 2, 'the quantity-filled report was archived before duplicating');
-  await page.click('[data-tab="archive"]');
-  await page.click('[data-action="archive-delete"]');
-  await page.waitForTimeout(100);
-  assert.equal((await uiState()).archive.length, 1);
-  // delete the second template -> falls back to the first
-  await page.click('[data-tab="templates"]');
-  await page.click('[data-action="template-delete"]');
-  await page.waitForTimeout(100);
-  const s2 = await uiState();
-  assert.equal(s2.templates.length, 1);
-  assert.equal(s2.activeTemplateId, s2.templates[0].id);
+  assert.ok(!page2.includes('SAMPLING PLAN'), 'the header blocks are printed on page 1 only');
+  const last = pdfText(pdf2, ['-f', String(pages), '-l', String(pages)]);
+  assert.match(last, /REMARKS/, 'the closing block is on the last page');
   assert.deepEqual(page.__errors, []);
 });
 
@@ -320,13 +288,14 @@ test('mobile layout has no horizontal overflow and remains usable', async () => 
   context = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'he-IL', isMobile: true, hasTouch: true });
   page = await context.newPage(); page.on('dialog', d => d.accept());
   await page.goto(url, { waitUntil: 'networkidle' });
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  assert.ok(overflow <= 1, `horizontal overflow ${overflow}px`);
+  const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  assert.ok((await overflow()) <= 1, `horizontal overflow ${await overflow()}px`);
+  await createProductAndReport();
+  assert.ok((await overflow()) <= 1, `report overflow ${await overflow()}px`);
   await fill('#h_quantity', '50');
-  assert.equal((await page.textContent('.sample-big')).trim(), '8');
-  await page.click('[data-tab="templates"]');
-  const overflow2 = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  assert.ok(overflow2 <= 1, `templates overflow ${overflow2}px`);
+  assert.match(await page.textContent('#samplingLine'), /גודל מדגם: 8/);
+  await page.click('.side-nav [data-tab="products"]');
+  assert.ok((await overflow()) <= 1, `products overflow ${await overflow()}px`);
 });
 
 test('service worker registers and serves the shell offline', async () => {
@@ -337,6 +306,6 @@ test('service worker registers and serves the shell offline', async () => {
   await context.setOffline(true);
   await page.reload({ waitUntil: 'load' });
   assert.equal(await page.title(), 'UCM Inspection Studio');
-  assert.ok(await page.$('#h_reportNo'), 'app rendered from cache while offline');
+  assert.ok(await page.$('.empty-start'), 'app rendered from cache while offline');
   await context.setOffline(false);
 });

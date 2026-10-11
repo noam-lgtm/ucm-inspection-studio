@@ -11,7 +11,7 @@ const clean = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
 
 /** Convert one AI row into a core feature + result. */
 export function aiRowToFeature(row) {
-  const kind = FEATURE_KINDS.includes(row.kind) ? row.kind : 'numeric';
+  const kind = FEATURE_KINDS.includes(row.kind) ? row.kind : (row.kind === 'visual' ? 'gauge' : 'numeric');
   let feature, confidence = Math.max(0, Math.min(1, Number(row.confidence) || 0)), reasons = [];
   if (kind === 'numeric' && clean(row.nominal)) {
     feature = blankFeature('numeric');

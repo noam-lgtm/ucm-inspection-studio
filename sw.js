@@ -1,5 +1,5 @@
 /* Offline support. Cache-first for the app shell, refreshed on every new deploy (bump VERSION). */
-const VERSION = 'v2.2.0';
+const VERSION = 'v3.0.0';
 const CACHE = 'ucm-inspection-' + VERSION;
 const ASSETS = [
   './', './index.html', './src/app.js', './src/app.css', './src/report.css', './src/core.js', './src/sampling.js',

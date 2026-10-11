@@ -40,7 +40,7 @@ async function lockedPage() {
 test('wrong key is rejected, right key opens the app, stays open after reload, logout locks again', async () => {
   const { context, page } = await lockedPage();
   assert.equal(await page.isVisible('#lockScreen'), true);
-  assert.equal(await page.isVisible('#h_reportNo'), false, 'no app content behind the lock');
+  assert.equal(await page.isVisible('.empty-start'), false, 'no app content behind the lock');
   assert.equal(await page.evaluate(() => document.getElementById('main').innerHTML.trim()), '', 'the app is not even rendered');
   await page.fill('#lockKey', 'wrong-password-123456');
   await page.click('#lockSubmit');
@@ -48,7 +48,7 @@ test('wrong key is rejected, right key opens the app, stays open after reload, l
   assert.equal(await page.isVisible('#lockScreen'), true);
   await page.fill('#lockKey', KEY);
   await page.click('#lockSubmit');
-  await page.waitForSelector('#h_reportNo');
+  await page.waitForSelector('.empty-start');
   assert.equal(await page.isVisible('#lockScreen'), false);
   await page.waitForFunction(() => window.UCM.state.settings.sync.lastSyncAt, null, { timeout: 15000 });
   await page.reload({ waitUntil: 'networkidle' });
@@ -68,6 +68,6 @@ test('without syncUrl in config.js the app opens directly (local mode)', async (
   const page = await context.newPage();
   await page.goto(url, { waitUntil: 'networkidle' });
   assert.equal(await page.isVisible('#lockScreen'), false);
-  assert.ok(await page.$('#h_reportNo'));
+  assert.ok(await page.$('.empty-start'));
   await context.close();
 });

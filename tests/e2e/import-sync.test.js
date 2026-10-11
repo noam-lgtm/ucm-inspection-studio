@@ -57,7 +57,7 @@ async function newPage() {
   return { context, page };
 }
 async function configureSync(page) {
-  await page.click('[data-tab="settings"]');
+  await page.click('.side-nav [data-tab="settings"]');
   await page.fill('#syncUrl', workerUrl);
   await page.fill('#syncKey', KEY);
   await page.click('[data-action="sync-test"]');
@@ -68,7 +68,7 @@ const uiState = page => page.evaluate(() => JSON.parse(JSON.stringify(window.UCM
 
 test('import report A through the UI: 12 rows, product saved, report opened from the product', async () => {
   const { context, page } = await newPage();
-  await page.click('[data-tab="products"]');
+  await page.click('.side-nav [data-tab="products"]');
   await page.click('[data-action="go-import"]');
   await page.setInputFiles('#importPdf', path.join(FIX, 'report-MM606207C-C.pdf'));
   await page.waitForSelector('.im-row', { timeout: 60000 });
@@ -78,6 +78,7 @@ test('import report A through the UI: 12 rows, product saved, report opened from
   assert.equal(await page.inputValue('input[name="imf:revision"]'), 'C');
   assert.equal(await page.inputValue('input[name="imf:inspectionDate"]'), '2023-09-06');
   assert.ok(await page.$('.im-row img'), 'crops from the PDF are shown');
+  assert.ok(await page.$('.im-field label img.im-crop-small'), 'field crops sit on the label line');
   // Keyboard flow: Enter in a nominal field jumps to the next numeric row's nominal (gauge rows skipped)
   await page.focus('input[name="imr:nominal"][data-i="3"]');
   await page.keyboard.press('Enter');
@@ -87,21 +88,28 @@ test('import report A through the UI: 12 rows, product saved, report opened from
   // Fix the angle row (no tolerance on the form) before saving
   const angleIndex = await page.evaluate(() => window.UCM.ui.import.draft.features.findIndex(f => f.feature.unit === 'deg'));
   await page.fill(`input[name="imr:upper"][data-i="${angleIndex}"]`, '0.5');
-  assert.match(await page.textContent('[data-im-row="8"] .fe-preview-text'), /90\.0 ±0\.5/);
+  assert.match(await page.textContent('[data-im-row="8"] .fe-preview-text'), /90° ±0\.5/);
   await page.click('[data-action="im-save"][data-then="report"]');
   await page.waitForSelector('#h_reportNo');
+  // The imported report itself is now the current report: every value from the PDF is in place
+  assert.equal(await page.inputValue('#h_reportNo'), '9515_2');
+  assert.equal(await page.inputValue('#h_quantity'), '250');
+  assert.equal(await page.inputValue('#h_inspector'), 'YURI S.');
+  assert.equal(await page.inputValue('#h_inspectionDate'), '2023-09-06');
   assert.equal(await page.inputValue('#h_partNo'), 'MM606207C');
   assert.equal(await page.inputValue('#h_revision'), 'C');
   assert.ok(await page.$('#h_partNo:disabled') && await page.$('#h_revision:disabled'), 'product identity is locked on the report');
   assert.equal(await page.inputValue('#h_customer'), 'Atena Ltd.');
   assert.equal((await page.$$('tr[data-row]')).length, 12);
-  assert.match(await page.textContent('tr[data-row] .req'), /4\.33 ±0\.10 x 60°/);
+  assert.match(await page.textContent('tr[data-row] .req'), /4\.33 x 60°/);
+  assert.match(await page.textContent('tr[data-row] .lim'), /±0\.1/);
   const s = await uiState(page);
   assert.equal(s.products.length, 1);
   assert.equal(s.products[0].features.length, 12);
-  assert.equal(s.archive.length, 1, 'the historical report was archived');
-  assert.equal(s.archive[0].header.reportNo, '9515_2');
-  assert.equal(s.archive[0].results[s.archive[0].features[0].id].min, '4.24');
+  assert.equal(s.draft.results[s.draft.features[0].id].min, '4.24', 'measured values are on the report');
+  assert.equal(s.draft.results[s.draft.features[1].id].max, '30.04');
+  assert.equal(s.archive.length, 1, 'the historical report is also kept (and synced) in the archive');
+  assert.equal(s.archive[0].id, s.draft.id);
   // Reload: the product-based draft survives
   await page.reload({ waitUntil: 'networkidle' });
   assert.equal(await page.inputValue('#h_partNo'), 'MM606207C');
@@ -112,13 +120,13 @@ test('import report A through the UI: 12 rows, product saved, report opened from
 test('re-importing the same part/revision updates the existing product instead of duplicating it', async () => {
   const { context, page } = await newPage();
   for (let i = 0; i < 2; i++) {
-    await page.click('[data-tab="products"]');
+    await page.click('.side-nav [data-tab="products"]');
     await page.click('[data-action="go-import"]');
     await page.setInputFiles('#importPdf', path.join(FIX, 'report-MM606207C-C.pdf'));
     await page.waitForSelector('.im-row', { timeout: 60000 });
     if (i === 1) assert.match(await page.evaluate(() => Array.from(document.querySelectorAll('.alert')).map(a => a.textContent).join(' ')), /קיים ויעודכן/);
     await page.click('[data-action="im-save"][data-then="products"]');
-    await page.waitForSelector('.tpl-editor');
+    await page.waitForSelector('.product-editor');
   }
   const s = await uiState(page);
   assert.equal(s.products.length, 1);
@@ -129,12 +137,12 @@ test('re-importing the same part/revision updates the existing product instead o
 test('cross-device: device A imports with sync on; device B sees the product and opens a report from it', async () => {
   const a = await newPage();
   await configureSync(a.page);
-  await a.page.click('[data-tab="products"]');
+  await a.page.click('.side-nav [data-tab="products"]');
   await a.page.click('[data-action="go-import"]');
   await a.page.setInputFiles('#importPdf', path.join(FIX, 'report-MM606207C-C.pdf'));
   await a.page.waitForSelector('.im-row', { timeout: 60000 });
   await a.page.click('[data-action="im-save"][data-then="products"]');
-  await a.page.waitForSelector('.tpl-editor');
+  await a.page.waitForSelector('.product-editor');
   // wait for the automatic push
   await a.page.waitForFunction(() => Object.keys(window.UCM.state.settings.dirty || {}).length === 0 && window.UCM.state.settings.sync.lastSyncAt, null, { timeout: 20000 });
   const sa = await uiState(a.page);
@@ -154,7 +162,7 @@ test('cross-device: device A imports with sync on; device B sees the product and
   assert.equal(sb.products[0].features.length, 12);
   assert.equal(sb.archive.length, 1, 'the archived historical report also arrived');
   // Open a report from the synced product via the picker on the report tab
-  await b.page.click('[data-tab="report"]');
+  await b.page.click('.side-nav [data-tab="report"]');
   await b.page.fill('#productSearch', 'MM606');
   await b.page.waitForSelector('#productResults button[data-action="product-use"]');
   await b.page.click('#productResults button[data-action="product-use"]');
@@ -162,11 +170,11 @@ test('cross-device: device A imports with sync on; device B sees the product and
   assert.equal(await b.page.inputValue('#h_partNo'), 'MM606207C');
   assert.equal((await b.page.$$('tr[data-row]')).length, 12);
   // Device B edits the product; device A receives the change on its next sync
-  await b.page.click('[data-tab="products"]');
+  await b.page.click('.side-nav [data-tab="products"]');
   await b.page.click('[data-action="product-edit"]');
   await b.page.fill('input[name="pr:catalogNo"]', 'CAT-SYNC');
   await b.page.waitForFunction(() => Object.keys(window.UCM.state.settings.dirty || {}).length === 0, null, { timeout: 20000 });
-  await a.page.click('[data-tab="settings"]');
+  await a.page.click('.side-nav [data-tab="settings"]');
   await a.page.click('[data-action="sync-now"]');
   await a.page.waitForFunction(() => window.UCM.state.products[0].catalogNo === 'CAT-SYNC', null, { timeout: 20000 });
   assert.deepEqual(a.page.__errors, []); assert.deepEqual(b.page.__errors, []);
@@ -176,7 +184,7 @@ test('cross-device: device A imports with sync on; device B sees the product and
 test('import report B with AI available: image cells are filled by the (mocked) vision model and still flagged for confirmation', async () => {
   const { context, page } = await newPage();
   await configureSync(page);
-  await page.click('[data-tab="products"]');
+  await page.click('.side-nav [data-tab="products"]');
   await page.click('[data-action="go-import"]');
   await page.setInputFiles('#importPdf', path.join(FIX, 'report-0112807-000-AB.pdf'));
   await page.waitForSelector('.im-row', { timeout: 60000 });
@@ -186,14 +194,47 @@ test('import report B with AI available: image cells are filled by the (mocked) 
   assert.equal(await page.inputValue('input[name="imr:nominal"][data-i="0"]'), '0.69');
   assert.equal(await page.inputValue('input[name="imr:nominal"][data-i="5"]'), '3.05');
   assert.equal(await page.inputValue('input[name="imr:label"][data-i="10"]'), '2-56 UNC');
-  assert.match(await page.textContent('[data-im-row="0"] .fe-preview-text'), /0\.69 ±0\.10/);
+  assert.match(await page.textContent('[data-im-row="0"] .fe-preview-text'), /0\.69 ±0\.1/);
   assert.ok(await page.$('[data-im-row="0"].needs'), 'AI-read rows still require confirmation');
   await page.click('[data-action="im-save"][data-then="products"]');
-  await page.waitForSelector('.tpl-editor');
+  await page.waitForSelector('.product-editor');
   const s = await uiState(page);
   assert.equal(s.products[0].partNo, '0112807-000');
   assert.equal(s.products[0].revision, 'AB');
   assert.equal(s.products[0].features.length, 15);
+  assert.deepEqual(page.__errors, []);
+  await context.close();
+});
+
+const pdfText = (file, extra = []) => execFileSync('pdftotext', [...extra, '-layout', file, '-']).toString();
+
+test('fidelity: the archived historical report prints like the original UCM form (two pages, same cells)', async () => {
+  const { context, page } = await newPage();
+  await page.click('.side-nav [data-tab="products"]');
+  await page.click('[data-action="go-import"]');
+  await page.setInputFiles('#importPdf', path.join(FIX, 'report-MM606207C-C.pdf'));
+  await page.waitForSelector('.im-row', { timeout: 60000 });
+  await page.click('[data-action="im-save"][data-then="report"]');
+  await page.waitForSelector('#h_reportNo');
+  assert.equal(await page.inputValue('#h_reportNo'), '9515_2');
+  await page.click('[data-action="go-preview"]');
+  await page.waitForSelector('#previewPaper .rs-page');
+  await page.emulateMedia({ media: 'print' });
+  const pdf = path.join(ROOT, 'test-output', 'report-fidelity-A.pdf');
+  await page.pdf({ path: pdf, format: 'A4', preferCSSPageSize: true, printBackground: true });
+  const pages = Number(/Pages:\s+(\d+)/.exec(execFileSync('pdfinfo', [pdf]).toString())[1]);
+  const text = pdfText(pdf);
+  assert.ok(text.includes(`Page ${pages} of ${pages}`));
+  // Every header value of the original LotOrder96 report
+  for (const cell of ['FINAL INSPECTION REPORT', '9515_2', 'Atena Ltd.', '250', 'PO23000834 PO24000075', 'MM606207C', 'Locker VG', '2.5', '32', '±0.1', 'YURI S.', '06/09/23'])
+    assert.ok(text.includes(cell), `missing header value "${cell}"`);
+  // Every row as written on the original: Required in drawing notation, instrument, TOL, measured values as typed
+  for (const cell of ['4.33 x 60°', 'Comperator', '4.24', '4.38', 'Ø30', 'Caliper', '29.95', '30.04', 'R26', 'XYZ cmm', '25.97', '25.99', '34', '33.94', '34.05',
+    'M16x2', 'Thread pluge gage', 'GO', '5.1 x 30°', '5.04', '5.13', '7.50 x 30°', '7.45', '7.54', '20', 'Pins', '0.03', '20.01', '20.027', '90°', '89.95', '90.08',
+    '3.60', 'Cutting Part +', '3.54', '3.67', '7.50 (x3)', 'Height Gauge', '7.48', '7.53', 'M2 Thru (x3)']) assert.ok(text.includes(cell), `missing row cell "${cell}"`);
+  assert.ok(!/\d\s?mm\b/.test(text), 'no unit suffix: values look exactly like the original');
+  assert.ok(!text.includes('30.0 '), 'nominals are printed as written, not reformatted');
+  assert.equal((text.match(/—/g) || []).length, 2, 'the only empty cells are the two TOL cells of the 90° row, blank on the original as well');
   assert.deepEqual(page.__errors, []);
   await context.close();
 });
