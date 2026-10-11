@@ -4,7 +4,7 @@ const CACHE = 'ucm-inspection-' + VERSION;
 const ASSETS = [
   './', './index.html', './src/app.js', './src/app.css', './src/report.css', './src/core.js', './src/sampling.js',
   './src/storage.js', './src/i18n.js', './src/report-sheet.js', './src/pdf-import.js', './src/pdf-pages.js', './src/pdf-render.js',
-  './src/ai-merge.js', './src/sync.js', './src/ui-import.js', './src/ui-products.js', './src/ui-settings.js',
+  './src/ai-merge.js', './src/sync.js', './src/logo-default.js', './src/ui-import.js', './src/ui-products.js', './src/ui-settings.js',
   './vendor/pdfjs/pdf.min.js', './vendor/pdfjs/pdf.worker.min.js', './manifest.webmanifest', './icon.svg', './logo-ucm.svg',
 ];
 

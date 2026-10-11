@@ -264,7 +264,7 @@ function renderReport() {
     <aside class="report-side">
       <section class="panel"><div class="panel-head"><h2>${esc(t('section_sampling'))}</h2></div><div class="panel-body">
         <div id="samplingPanel">${samplingPanelHtml(report)}</div>
-        <div class="field-grid two">${['accepted', 'rejected'].map(k => headerField(k, report, tpl)).join('')}</div>
+        <div class="field-grid two">${['totalInspected', 'accepted', 'rejected'].map(k => headerField(k, report, tpl)).join('')}</div>
       </div></section>
       <section class="panel"><div class="panel-body" id="summaryPanel">${summaryHtml(report)}</div>
         <div class="panel-foot"><button type="button" class="btn btn-primary btn-block" data-action="go-preview">${esc(t('preview_pdf'))}</button></div></section>

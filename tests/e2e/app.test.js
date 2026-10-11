@@ -237,6 +237,9 @@ test('PDF: A4 output, file name, page numbering and repeated header on long repo
   assert.match(text, /CODE LETTER/);
   assert.match(text, /\b20\b/, 'sample size 20 for lot 120 level II');
   assert.match(text, /Ac \/ Re/);
+  assert.match(text, /GENERAL TOLERANCE/);
+  assert.match(text, /TOTAL INSPECTED/);
+  assert.equal(await page.evaluate(() => { const i = document.querySelector('#previewPaper .rs-logo'); return i && i.complete && i.naturalWidth > 0; }), true, 'the default company logo is loaded on the report sheet');
   assert.match(text, /TOL/);
   assert.match(text, /INCOMPLETE/);
   assert.match(text, /Page 1 of 1/);
