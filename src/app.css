@@ -236,6 +236,16 @@ table.list { width: 100%; border-collapse: collapse; min-width: 760px; }
   .print-only { display: block !important; }
 }
 
+/* lock screen */
+.lock-screen[hidden] { display: none; }
+.lock-screen { position: fixed; inset: 0; z-index: 200; background: var(--bg); display: grid; place-items: center; padding: 20px; }
+.lock-card { background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 32px 28px; width: min(420px, 100%); display: grid; gap: 12px; justify-items: stretch; text-align: center; }
+.lock-card img { justify-self: center; height: 60px; width: auto; }
+.lock-card h1 { margin: 6px 0 0; font-size: 20px; }
+.lock-card label { font-size: 12px; font-weight: 700; color: #5f6f67; text-align: start; }
+.lock-card input { border: 1px solid #d9e2db; border-radius: 8px; padding: 10px 12px; font-size: 15px; min-height: 44px; }
+.lock-error { margin: 0; min-height: 18px; font-size: 12.5px; color: var(--fail); font-weight: 700; }
+
 /* sync indicator */
 .local-indicator { cursor: pointer; background: #fff; }
 .dot.off { background: #c3cdc6; } .dot.ok { background: var(--lime); } .dot.pending { background: #e2b33b; } .dot.err { background: #d45a5a; }

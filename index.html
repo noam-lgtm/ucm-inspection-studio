@@ -57,6 +57,17 @@
       </form>
     </dialog>
   </div>
+  <div id="lockScreen" class="lock-screen" hidden>
+    <form id="lockForm" class="lock-card" autocomplete="off">
+      <img src="logo-ucm.svg" alt="UCM Technologies" width="120" height="60">
+      <h1 data-t="lock_title"></h1>
+      <p class="side-note" data-t="lock_intro"></p>
+      <label for="lockKey" data-t="lock_password"></label>
+      <input id="lockKey" type="password" dir="ltr" autocomplete="current-password" required minlength="8">
+      <button type="submit" class="btn btn-primary btn-block" id="lockSubmit" data-t="lock_submit"></button>
+      <p class="lock-error" id="lockError" role="alert"></p>
+    </form>
+  </div>
   <div id="printSheet" class="print-only" aria-hidden="true"></div>
   <script type="module" src="src/app.js"></script>
 </body>

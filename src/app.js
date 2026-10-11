@@ -8,6 +8,7 @@ import * as Sync from './sync.js';
 import { renderImport, onImportInput, onImportChange, onImportAction, onImportKeydown, startImport, newImportState } from './ui-import.js';
 import { renderProducts, onProductsInput, onProductsAction, filterProducts, productLabel } from './ui-products.js';
 import { renderSettings, onSettingsInput, onSettingsAction, syncStatusText } from './ui-settings.js';
+import { CONFIG } from './config.js';
 
 const APP_VERSION = '2.1.0';
 
@@ -651,6 +652,11 @@ function clickAction(action, el) {
     case 'go-products': return go('products');
     case 'go-import': ui.import = newImportState(); return go('import');
     case 'go-settings': return go('settings');
+    case 'lock-logout': {
+      if (!confirmAction(t('lock_logout_confirm'))) return undefined;
+      state.settings.sync.key = ''; state.settings.sync.cursor = ''; persist();
+      showLock(); return undefined;
+    }
     case 'product-open-current': { const p = draftProduct(); if (p) { ui.editProductId = p.id; go('products'); } return undefined; }
     case 'product-use': {
       const p = state.products.find(x => x.id === el.dataset.id); if (!p) return undefined;
@@ -832,8 +838,33 @@ function registerServiceWorker() {
   }).catch(() => { /* offline support is optional */ });
 }
 
+// ---------- lock screen (company access key, verified against the sync server) ----------
+function lockRequired() { return Boolean(CONFIG.syncUrl) && !state.settings.sync.key; }
+function showLock() {
+  const lock = $('#lockScreen'); lock.hidden = false; $('#appShell').setAttribute('aria-hidden', 'true');
+  $('#lockError').textContent = ''; $('#lockKey').value = ''; setTimeout(() => $('#lockKey').focus(), 50);
+}
+function hideLock() { $('#lockScreen').hidden = true; $('#appShell').removeAttribute('aria-hidden'); }
+async function onLockSubmit(event) {
+  event.preventDefault();
+  const key = $('#lockKey').value.trim();
+  const button = $('#lockSubmit'); const error = $('#lockError');
+  if (!key) return;
+  button.disabled = true; error.textContent = t('lock_checking');
+  try {
+    const health = await Sync.checkHealth(CONFIG.syncUrl, key);
+    state.settings.sync.url = CONFIG.syncUrl; state.settings.sync.key = key; state.settings.sync.cursor = '';
+    syncState.health = health; syncState.error = '';
+    persist(); hideLock(); render();
+    scheduleSync(200);
+  } catch (err) {
+    error.textContent = err.message === 'unauthorized' ? t('lock_wrong') : t('lock_offline');
+  } finally { button.disabled = false; }
+}
+
 function init() {
   state = Store.loadState(storage);
+  if (CONFIG.syncUrl && state.settings.sync.url !== CONFIG.syncUrl) { state.settings.sync.url = CONFIG.syncUrl; state.settings.sync.cursor = ''; }
   ui.editTemplateId = state.activeTemplateId;
   ensureDraft();
   // static text
@@ -848,7 +879,8 @@ function init() {
   window.addEventListener('beforeunload', () => { if (ui.saveTimer) persist(); });
   window.addEventListener('beforeprint', renderPrintSheet);
   window.addEventListener('online', () => scheduleSync(500));
-  render();
+  $('#lockForm').addEventListener('submit', onLockSubmit);
+  if (lockRequired()) showLock(); else render();
   persist();
   registerServiceWorker();
   if (Sync.syncConfigured(state.settings)) { scheduleSync(300); setInterval(() => scheduleSync(0), 5 * 60 * 1000); }
