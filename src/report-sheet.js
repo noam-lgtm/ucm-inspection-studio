@@ -74,8 +74,7 @@ export function renderReportSheet(template, report) {
       <td class="c">${i + 1}</td>
       <td class="req">${esc(required)}${unit ? ` <span class="unit">${esc(unit)}</span>` : ''}${noteLine}</td>
       <td>${show(f.method)}</td>
-      <td class="c">${isNumeric ? esc(tolMinus) : ''}</td>
-      <td class="c">${isNumeric ? esc(tolPlus) : esc(limits)}</td>
+      ${isNumeric ? `<td class="c">${esc(tolMinus)}</td><td class="c">${esc(tolPlus)}</td>` : `<td class="c" colspan="2">${esc(limits)}</td>`}
       ${isNumeric ? `<td class="c num">${min}</td><td class="c num">${max}</td>` : `<td class="c num" colspan="2">${min}</td>`}
       <td class="c">${resultCell(ev.state)}</td>
     </tr>`;

@@ -34,7 +34,7 @@ table.rs-table { border-collapse: collapse; width: 100%; table-layout: fixed; fo
 .rs-table td.req { font-weight: 700; }
 .rs-table .unit { font-weight: 400; color: #5a6a62; font-size: 8pt; }
 .rs-rownote { font-weight: 400; font-size: 8pt; color: #5a6a62; }
-.rs-table .w-no { width: 6%; } .rs-table .w-req { width: 27%; } .rs-table .w-method { width: 19%; } .rs-table .w-tol { width: 8%; } .rs-table .w-min { width: 10%; } .rs-table .w-max { width: 10%; } .rs-table .w-res { width: 12%; }
+.rs-table .w-no { width: 5%; } .rs-table .w-req { width: 25%; } .rs-table .w-method { width: 18%; } .rs-table .w-tol { width: 8%; } .rs-table .w-min { width: 10%; } .rs-table .w-max { width: 10%; } .rs-table .w-res { width: 16%; }
 .rs-table thead { display: table-header-group; }
 .rs-table tr { break-inside: avoid; page-break-inside: avoid; }
 .r-pass { color: #1f6b33; font-weight: 800; }
