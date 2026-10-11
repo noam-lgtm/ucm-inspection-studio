@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; manifest-src 'self'; worker-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; manifest-src 'self'; worker-src 'self'; connect-src 'self' https: http://127.0.0.1:* http://localhost:*; base-uri 'none'; form-action 'none'">
   <meta name="color-scheme" content="light">
   <meta name="description" content="Final Inspection Report generator for CNC manufacturing. Runs entirely in the browser; data stays on this computer.">
   <meta name="theme-color" content="#2f5a1d">
@@ -21,7 +21,7 @@
         <div class="brand-text"><strong data-t="app_name">Inspection Studio</strong><small data-t="app_sub"></small></div>
       </div>
       <div class="top-actions">
-        <span class="local-indicator"><span class="dot"></span><span data-t="local_only"></span></span>
+        <button type="button" class="local-indicator" id="syncIndicator" data-tab="settings"><span class="dot" id="syncDot"></span><span id="syncText"></span></button>
         <button type="button" class="btn btn-icon" data-action="help" aria-label="Help" title="Help">?</button>
       </div>
     </header>
@@ -29,9 +29,11 @@
       <aside class="sidebar">
         <nav class="side-nav" aria-label="Main">
           <button type="button" class="nav-btn active" data-tab="report"><span class="nav-num">01</span><span data-t="nav_report"></span></button>
-          <button type="button" class="nav-btn" data-tab="archive"><span class="nav-num">02</span><span data-t="nav_archive"></span></button>
-          <button type="button" class="nav-btn" data-tab="templates"><span class="nav-num">03</span><span data-t="nav_templates"></span></button>
-          <button type="button" class="nav-btn" data-tab="preview"><span class="nav-num">04</span><span data-t="nav_preview"></span></button>
+          <button type="button" class="nav-btn" data-tab="products"><span class="nav-num">02</span><span data-t="nav_products"></span></button>
+          <button type="button" class="nav-btn" data-tab="archive"><span class="nav-num">03</span><span data-t="nav_archive"></span></button>
+          <button type="button" class="nav-btn" data-tab="templates"><span class="nav-num">04</span><span data-t="nav_templates"></span></button>
+          <button type="button" class="nav-btn" data-tab="preview"><span class="nav-num">05</span><span data-t="nav_preview"></span></button>
+          <button type="button" class="nav-btn" data-tab="settings"><span class="nav-num">06</span><span data-t="nav_settings"></span></button>
         </nav>
         <div class="side-block" id="sidebarTemplate"></div>
         <div class="side-block side-backup">

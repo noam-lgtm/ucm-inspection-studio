@@ -13,6 +13,9 @@ Live: https://noam-lgtm.github.io/ucm-inspection-studio/
 * **Archive**: every report is kept locally when a new one is started; reports can be reopened, duplicated, reprinted or deleted.
 * **Backup**: export / import everything as one JSON file. Import merges and never deletes.
 * **Offline**: a service worker caches the app so it works without a network connection once loaded.
+* **PDF import**: upload an existing inspection report (PDF or photo). The text layer is parsed deterministically; image-only cells and scans can be read by Claude through the sync server; everything uncertain is highlighted next to a crop of the PDF for confirmation. The result is a **product specification** stored by part number + revision, plus the historical report in the archive. See `docs/IMPORT-AND-SYNC.md`.
+* **Products**: part number + revision → characteristics, tolerances, instruments, customer. A new report starts from a product in one click.
+* **Sync (optional)**: a small Cloudflare Worker (free tier) keeps products, templates and reports identical on every computer, stores the original PDFs and writes a daily backup. The app remains local-first.
 
 ## Engineering rules the app enforces
 
@@ -28,8 +31,9 @@ Live: https://noam-lgtm.github.io/ucm-inspection-studio/
 No build step. Plain ES modules.
 
 ```
-npm ci
-npm test            # unit tests (node:test)
+npm ci && npm ci --prefix worker --omit=dev
+npm test            # unit tests (node:test), including both real PDF fixtures
+npm run test:worker # the Worker in workerd (Miniflare) with local D1/R2 and a mocked Anthropic API
 npm run test:e2e    # Playwright end-to-end tests in headless Chromium (needs poppler-utils for PDF checks)
 npm run serve       # local static server on http://127.0.0.1:8787/
 ```
@@ -42,7 +46,14 @@ src/sampling.js       Table I / Table II-A data and lookups
 src/core.js           features, limits, verdicts, templates, reports
 src/storage.js        localStorage persistence, v1 migration, backup files
 src/report-sheet.js   printable report (HTML)
-src/app.js            UI
+src/pdf-pages.js      pdf.js glue: positioned text + image placements
+src/pdf-import.js     deterministic parser of inspection reports -> import draft
+src/ai-merge.js       merges the vision model's answer into the draft
+src/pdf-render.js     browser rendering / crops (uses vendor/pdfjs, legacy build)
+src/sync.js           sync client (push/pull, tombstones, files, AI calls)
+src/ui-import.js      import wizard; src/ui-products.js products; src/ui-settings.js settings
+src/app.js            UI shell, report, archive, templates
+worker/               Cloudflare Worker: sync API, file storage, AI proxy, daily backup
 src/i18n.js           Hebrew UI strings
 src/app.css, src/report.css
 sw.js                 offline cache (bump VERSION on release)

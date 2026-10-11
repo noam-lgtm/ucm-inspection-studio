@@ -97,7 +97,7 @@ export function unitLabel(unit) {
 export function blankFeature(kind = 'numeric') {
   return {
     id: newId(), kind: FEATURE_KINDS.includes(kind) ? kind : 'numeric',
-    label: '', nominal: '', upper: '', lower: '', symmetric: true,
+    label: '', suffix: '', nominal: '', upper: '', lower: '', symmetric: true,
     unit: kind === 'numeric' ? 'mm' : '', method: '', note: '',
   };
 }
@@ -125,16 +125,19 @@ export function requirementText(feature) {
   if (feature.kind !== 'numeric') return String(feature.label || '').trim();
   const lim = featureLimits(feature);
   const label = String(feature.label || '').trim();
+  const suffix = String(feature.suffix || '').trim();
   if (!lim.ok) {
-    const raw = [feature.nominal, feature.upper].filter(x => String(x ?? '').trim()).join(' ');
-    return [label, raw].filter(Boolean).join(' ');
+    const nom = String(feature.nominal ?? '').trim() || '?';
+    const up = String(feature.upper ?? '').trim();
+    const tol = up ? (feature.symmetric ? '±' + up : up + ' / ' + String(feature.lower ?? '').trim()) : '';
+    return [label, nom, tol, suffix].filter(Boolean).join(' ');
   }
   const d = lim.decimals;
   const nominal = formatNumber(lim.nominal, d);
   let tol;
   if (lim.upper === -lim.lower) tol = lim.upper === 0 ? '±0' : '±' + formatNumber(lim.upper, d);
   else tol = `${signed(lim.upper, d)} / ${signed(lim.lower, d)}`;
-  return [label, `${nominal} ${tol}`].filter(Boolean).join(' ');
+  return [label, `${nominal} ${tol}`, suffix].filter(Boolean).join(' ');
 }
 
 /** "24.90 / 25.10" style limits text for the report. */
@@ -254,13 +257,43 @@ export function formatReportNo(numbering, n = numbering.next) {
   return `${numbering.prefix || ''}${String(n).padStart(width, '0')}`;
 }
 
+// ---------- products (specification per part number + revision) ----------
+
+export const PRODUCT_FIELDS = Object.freeze(['partNo', 'revision', 'partName', 'catalogNo', 'customer', 'drawingNo', 'material', 'generalTolerance', 'aql', 'inspectionLevel']);
+
+export function normalizePartNo(value) { return String(value == null ? '' : value).trim().replace(/\s+/g, ' ').toUpperCase(); }
+export function normalizeRevision(value) { return String(value == null ? '' : value).trim().replace(/^rev\.?\s*/i, '').toUpperCase(); }
+/** Stable key used to find "the same product": part number + revision. */
+export function productKey(partNo, revision) { return normalizePartNo(partNo) + '@' + normalizeRevision(revision); }
+
+export function blankProduct() {
+  const now = new Date().toISOString();
+  return {
+    id: newId(), partNo: '', revision: '', partName: '', catalogNo: '', customer: '', drawingNo: '', material: '',
+    generalTolerance: '', aql: '', inspectionLevel: '', features: [], sourceFileId: '', sourceReportNo: '',
+    notes: '', createdAt: now, updatedAt: now,
+  };
+}
+
+export function findProduct(products, partNo, revision) {
+  const key = productKey(partNo, revision);
+  return (products || []).find(p => productKey(p.partNo, p.revision) === key) || null;
+}
+
+/** All revisions of a part number, newest first by revision text then date. */
+export function productRevisions(products, partNo) {
+  const key = normalizePartNo(partNo);
+  return (products || []).filter(p => normalizePartNo(p.partNo) === key)
+    .sort((a, b) => String(b.revision).localeCompare(String(a.revision), undefined, { numeric: true }) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
+}
+
 // ---------- reports ----------
 
 /**
  * Create a fresh report from a template. `previous` (optional) supplies carry-over values.
  * Mutates nothing; returns { report, numberingNext } so the caller decides whether to consume the number.
  */
-export function createReport(template, previous = null, now = new Date()) {
+export function createReport(template, previous = null, now = new Date(), product = null) {
   const header = {};
   for (const f of HEADER_FIELDS) {
     const policy = template.fields[f.key] || { mode: 'blank', value: '' };
@@ -269,22 +302,34 @@ export function createReport(template, previous = null, now = new Date()) {
     else if (mode === 'carry') header[f.key] = String(previous && previous.header && previous.header[f.key] || policy.value || '');
     else header[f.key] = '';
   }
+  // A product specification overrides the product-related header fields and supplies the characteristics.
+  if (product) {
+    for (const key of PRODUCT_FIELDS) if (String(product[key] || '').trim()) header[key] = String(product[key]);
+  }
   header.inspectionDate = localDate(now);
   if (template.numbering && template.numbering.mode === 'auto') header.reportNo = formatReportNo(template.numbering);
-  const features = template.features.map(f => ({ ...f }));
+  const source = product ? product.features : template.features;
+  const features = source.map(f => ({ ...f }));
   const results = {};
   features.forEach(f => { results[f.id] = blankResult(); });
   return {
     id: newId(), templateId: template.id, templateName: template.name,
+    productId: product ? product.id : '', productKey: product ? productKey(product.partNo, product.revision) : '', sourceFileId: '',
     createdAt: now.toISOString(), updatedAt: now.toISOString(),
     header, baseline: { ...header }, features, results, remarks: '',
   };
 }
 
+/** Product-related header fields are locked when the report comes from a product specification. */
+export function isProductLocked(report, key) {
+  return Boolean(report && report.productId) && ['partNo', 'revision'].includes(key);
+}
+
 /** Keep a draft's feature rows in sync with its template, preserving entered results by feature id. */
-export function syncReportFeatures(report, template) {
+export function syncReportFeatures(report, template, product = null) {
   const results = {};
-  const features = template.features.map(f => ({ ...f }));
+  const source = product ? product.features : template.features;
+  const features = source.map(f => ({ ...f }));
   features.forEach(f => { results[f.id] = report.results[f.id] || blankResult(); });
   return { ...report, templateId: template.id, templateName: template.name, features, results };
 }

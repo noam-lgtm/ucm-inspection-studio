@@ -4,7 +4,7 @@
  */
 import {
   HEADER_FIELDS, HEADER_KEYS, FEATURE_KINDS, UNITS, FIELD_MODES, MAX_FEATURES,
-  newId, defaultTemplate, defaultFieldPolicy, blankFeature, blankResult, createReport,
+  newId, defaultTemplate, defaultFieldPolicy, blankFeature, blankResult, createReport, blankProduct, PRODUCT_FIELDS,
 } from './core.js';
 import { LEVELS } from './sampling.js';
 
@@ -13,6 +13,7 @@ export const LEGACY_KEY = 'ucm.inspection.local.v1';
 export const BACKUP_FORMAT = 'ucm-inspection-backup';
 export const MAX_TEMPLATES = 50;
 export const MAX_ARCHIVE = 500;
+export const MAX_PRODUCTS = 2000;
 export const MAX_IMPORT_BYTES = 12 * 1024 * 1024;
 const LOGO_RE = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
 const MAX_LOGO_CHARS = 800000;
@@ -22,7 +23,25 @@ const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
 
 export function emptyState() {
   const starter = defaultTemplate();
-  return { version: 2, templates: [starter], activeTemplateId: starter.id, draft: null, archive: [], settings: { lastBackupAt: '' } };
+  return { version: 2, templates: [starter], activeTemplateId: starter.id, draft: null, archive: [], products: [], settings: defaultSettings() };
+}
+export function defaultSettings() {
+  return { lastBackupAt: '', migratedFromV1: false, sync: { url: '', key: '', cursor: '', lastSyncAt: '' }, dirty: {}, deleted: {}, autoAi: true };
+}
+
+export function normalizeProduct(raw) {
+  if (!isObj(raw) || !Array.isArray(raw.features)) throw new Error('product');
+  const p = blankProduct();
+  p.id = typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 120) : newId();
+  for (const key of PRODUCT_FIELDS) p[key] = str(raw[key], 240).trim();
+  if (p.inspectionLevel && !LEVELS.includes(p.inspectionLevel)) p.inspectionLevel = '';
+  p.features = raw.features.slice(0, MAX_FEATURES).map(normalizeFeature);
+  const seen = new Set();
+  p.features.forEach(f => { if (seen.has(f.id)) f.id = newId(); seen.add(f.id); });
+  p.sourceFileId = str(raw.sourceFileId, 120); p.sourceReportNo = str(raw.sourceReportNo, 80); p.notes = str(raw.notes, 2000);
+  p.createdAt = str(raw.createdAt, 40) || p.createdAt; p.updatedAt = str(raw.updatedAt, 40) || p.updatedAt;
+  if (raw.deleted) p.deleted = true;
+  return p;
 }
 
 export function normalizeFeature(raw) {
@@ -31,6 +50,7 @@ export function normalizeFeature(raw) {
   const f = blankFeature(kind);
   f.id = typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 120) : newId();
   f.label = str(raw.label, 200);
+  f.suffix = str(raw.suffix, 100);
   f.nominal = kind === 'numeric' ? str(raw.nominal, 40).trim() : '';
   f.upper = kind === 'numeric' ? str(raw.upper, 40).trim() : '';
   f.lower = kind === 'numeric' ? str(raw.lower, 40).trim() : '';
@@ -101,6 +121,7 @@ export function normalizeReport(raw) {
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 120) : newId(),
     templateId: str(raw.templateId, 120), templateName: str(raw.templateName, 120),
+    productId: str(raw.productId, 120), productKey: str(raw.productKey, 300), sourceFileId: str(raw.sourceFileId, 120),
     createdAt: str(raw.createdAt, 40) || now, updatedAt: str(raw.updatedAt, 40) || now,
     header, baseline, features, results, remarks: str(raw.remarks, 4000),
   };
@@ -170,7 +191,7 @@ export function migrateV1(raw) {
     draft.remarks = str(raw.report.remarks, 4000);
     draft.createdAt = str(raw.report.createdAt, 40) || draft.createdAt;
   }
-  return { version: 2, templates, activeTemplateId: active.id, draft, archive: [], settings: { lastBackupAt: '', migratedFromV1: true } };
+  return { version: 2, templates, activeTemplateId: active.id, draft, archive: [], products: [], settings: { ...defaultSettings(), migratedFromV1: true } };
 }
 
 export function normalizeState(raw) {
@@ -189,10 +210,22 @@ export function normalizeState(raw) {
   }
   const ids = new Set();
   archive.forEach(r => { if (ids.has(r.id)) r.id = newId(); ids.add(r.id); });
+  const products = [];
+  if (Array.isArray(raw.products)) {
+    for (const p of raw.products.slice(0, MAX_PRODUCTS)) { try { products.push(normalizeProduct(p)); } catch (_) { /* skip */ } }
+  }
+  const pids = new Set();
+  products.forEach(p => { if (pids.has(p.id)) p.id = newId(); pids.add(p.id); });
   const settings = isObj(raw.settings) ? raw.settings : {};
   return {
-    version: 2, templates, activeTemplateId: active.id, draft, archive,
-    settings: { lastBackupAt: str(settings.lastBackupAt, 40), migratedFromV1: Boolean(settings.migratedFromV1) },
+    version: 2, templates, activeTemplateId: active.id, draft, archive, products,
+    settings: {
+      lastBackupAt: str(settings.lastBackupAt, 40), migratedFromV1: Boolean(settings.migratedFromV1),
+      sync: isObj(settings.sync) ? { url: str(settings.sync.url, 300), key: str(settings.sync.key, 300), cursor: str(settings.sync.cursor, 40), lastSyncAt: str(settings.sync.lastSyncAt, 40) } : { url: '', key: '', cursor: '', lastSyncAt: '' },
+      dirty: isObj(settings.dirty) ? Object.fromEntries(Object.entries(settings.dirty).filter(([, v]) => v === true).slice(0, 5000)) : {},
+      deleted: isObj(settings.deleted) ? Object.fromEntries(Object.entries(settings.deleted).filter(([, v]) => typeof v === 'string').slice(0, 5000)) : {},
+      autoAi: settings.autoAi !== false,
+    },
   };
 }
 
@@ -218,6 +251,7 @@ export function buildBackup(state, { includeReports = true } = {}) {
   return {
     format: BACKUP_FORMAT, version: 2, exportedAt: new Date().toISOString(),
     templates: state.templates, activeTemplateId: state.activeTemplateId,
+    products: state.products || [],
     archive: includeReports ? state.archive : [],
     draft: includeReports ? state.draft : null,
   };
@@ -231,15 +265,16 @@ export function parseBackup(text) {
   if (data.format === 'ucm-inspection-templates' && data.version === 1 && Array.isArray(data.templates)) {
     const migrated = migrateV1({ version: 1, templates: data.templates, activeId: data.activeId, report: null });
     if (!migrated) throw new Error('format');
-    return { templates: migrated.templates, archive: [], draft: null, legacy: true };
+    return { templates: migrated.templates, products: [], archive: [], draft: null, legacy: true };
   }
   if (data.format !== BACKUP_FORMAT || data.version !== 2 || !Array.isArray(data.templates)) throw new Error('format');
   const templates = data.templates.slice(0, MAX_TEMPLATES).map(normalizeTemplate);
   const archive = Array.isArray(data.archive) ? data.archive.slice(0, MAX_ARCHIVE).map(normalizeReport) : [];
   let draft = null;
   if (data.draft) { try { draft = normalizeReport(data.draft); } catch (_) { draft = null; } }
+  const products = Array.isArray(data.products) ? data.products.slice(0, MAX_PRODUCTS).map(normalizeProduct) : [];
   if (!templates.length) throw new Error('empty');
-  return { templates, archive, draft, legacy: false };
+  return { templates, products, archive, draft, legacy: false };
 }
 
 /**
@@ -262,10 +297,17 @@ export function mergeBackup(state, backup) {
   }
   archive.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   const trimmed = archive.slice(0, MAX_ARCHIVE);
+  const products = (state.products || []).map(p => ({ ...p }));
+  let addedProducts = 0, updatedProducts = 0;
+  for (const p of backup.products || []) {
+    const i = products.findIndex(x => x.id === p.id);
+    if (i === -1) { if (products.length < MAX_PRODUCTS) { products.push(p); addedProducts++; } }
+    else if (String(p.updatedAt) >= String(products[i].updatedAt)) { products[i] = p; updatedProducts++; }
+  }
   const draft = state.draft || backup.draft || null;
   const activeTemplateId = templates.some(t => t.id === state.activeTemplateId) ? state.activeTemplateId : templates[0].id;
   return {
-    state: { ...state, templates, archive: trimmed, draft, activeTemplateId },
-    counts: { addedTemplates, updatedTemplates, addedReports, updatedReports },
+    state: { ...state, templates, archive: trimmed, draft, activeTemplateId, products },
+    counts: { addedTemplates, updatedTemplates, addedReports, updatedReports, addedProducts, updatedProducts },
   };
 }

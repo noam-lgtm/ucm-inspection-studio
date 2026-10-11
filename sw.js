@@ -1,9 +1,11 @@
 /* Offline support. Cache-first for the app shell, refreshed on every new deploy (bump VERSION). */
-const VERSION = 'v2.0.0';
+const VERSION = 'v2.1.0';
 const CACHE = 'ucm-inspection-' + VERSION;
 const ASSETS = [
   './', './index.html', './src/app.js', './src/app.css', './src/report.css', './src/core.js', './src/sampling.js',
-  './src/storage.js', './src/i18n.js', './src/report-sheet.js', './manifest.webmanifest', './icon.svg', './logo-ucm.svg',
+  './src/storage.js', './src/i18n.js', './src/report-sheet.js', './src/pdf-import.js', './src/pdf-pages.js', './src/pdf-render.js',
+  './src/ai-merge.js', './src/sync.js', './src/ui-import.js', './src/ui-products.js', './src/ui-settings.js',
+  './vendor/pdfjs/pdf.min.js', './vendor/pdfjs/pdf.worker.min.js', './manifest.webmanifest', './icon.svg', './logo-ucm.svg',
 ];
 
 self.addEventListener('install', event => {
@@ -16,7 +18,8 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   const request = event.request;
-  if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
+  const url = new URL(request.url);
+  if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.includes('/api/')) return;
   event.respondWith(
     caches.match(request, { ignoreSearch: true }).then(cached => {
       const network = fetch(request).then(response => {

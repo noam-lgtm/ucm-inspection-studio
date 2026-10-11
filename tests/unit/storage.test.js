@@ -85,7 +85,7 @@ test('v2 state round-trips and survives garbage', () => {
   s.archive.push(createReport(s.templates[0]));
   saveState(storage, s);
   const back = loadState(storage);
-  assert.deepEqual(back, { ...s, settings: { lastBackupAt: '', migratedFromV1: false } });
+  assert.deepEqual(back, s);
   storage.setItem(STORE_KEY, '{not json');
   assert.equal(loadState(storage).templates.length, 1);
   storage.setItem(STORE_KEY, JSON.stringify({ version: 2, templates: [{ bogus: true }, null, 5] }));
@@ -130,13 +130,13 @@ test('backup export, parse, merge (nothing is deleted on import)', () => {
   const other = emptyState();
   other.archive.push({ ...createReport(other.templates[0]), id: 'local-1', createdAt: '2026-02-01T00:00:00.000Z' });
   const { state, counts } = mergeBackup(other, parsed);
-  assert.deepEqual(counts, { addedTemplates: 2, updatedTemplates: 0, addedReports: 1, updatedReports: 0 });
+  assert.deepEqual(counts, { addedTemplates: 2, updatedTemplates: 0, addedReports: 1, updatedReports: 0, addedProducts: 0, updatedProducts: 0 });
   assert.equal(state.templates.length, 3);
   assert.equal(state.archive.length, 2);
   assert.equal(state.archive[0].id, 'local-1', 'newest first');
   assert.equal(state.draft, parsed.draft, 'an imported draft fills an empty draft slot only');
   const again = mergeBackup(state, parsed);
-  assert.deepEqual(again.counts, { addedTemplates: 0, updatedTemplates: 2, addedReports: 0, updatedReports: 1 });
+  assert.deepEqual(again.counts, { addedTemplates: 0, updatedTemplates: 2, addedReports: 0, updatedReports: 1, addedProducts: 0, updatedProducts: 0 });
   const noReports = buildBackup(s, { includeReports: false });
   assert.deepEqual(noReports.archive, []); assert.equal(noReports.draft, null);
   assert.throws(() => parseBackup('{"format":"x"}'));

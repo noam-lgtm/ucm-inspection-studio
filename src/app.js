@@ -4,6 +4,12 @@ import { LEVELS, SUPPORTED_AQLS } from './sampling.js';
 import { t } from './i18n.js';
 import * as Store from './storage.js';
 import { renderReportSheet, escapeHtml, reportFileName } from './report-sheet.js';
+import * as Sync from './sync.js';
+import { renderImport, onImportInput, onImportChange, onImportAction, startImport, newImportState } from './ui-import.js';
+import { renderProducts, onProductsInput, onProductsAction, filterProducts, productLabel } from './ui-products.js';
+import { renderSettings, onSettingsInput, onSettingsAction, syncStatusText } from './ui-settings.js';
+
+const APP_VERSION = '2.1.0';
 
 const esc = escapeHtml;
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -11,7 +17,8 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 const storage = window.localStorage;
 
 let state;
-const ui = { tab: 'report', editTemplateId: null, archiveQuery: '', saveTimer: null, toastTimer: null };
+const ui = { tab: 'report', editTemplateId: null, editProductId: null, archiveQuery: '', productQuery: '', productSearch: '', saveTimer: null, toastTimer: null, import: newImportState() };
+const syncState = { running: false, error: '', health: null, testMessage: '', timer: null };
 
 // ---------- persistence ----------
 function persist() {
@@ -19,26 +26,39 @@ function persist() {
   try { Store.saveState(storage, state); return true; }
   catch (_) { toast(t('toast_storage_error')); return false; }
 }
-function persistSoon() { clearTimeout(ui.saveTimer); ui.saveTimer = setTimeout(persist, 300); }
+function persistSoon() { clearTimeout(ui.saveTimer); ui.saveTimer = setTimeout(() => { persist(); scheduleSync(); }, 300); }
 
 function activeTemplate() { return state.templates.find(x => x.id === state.activeTemplateId) || state.templates[0]; }
 function editTemplate() { return state.templates.find(x => x.id === ui.editTemplateId) || activeTemplate(); }
-function touch(template) { template.updatedAt = new Date().toISOString(); }
+function touch(template) { template.updatedAt = new Date().toISOString(); Sync.markDirty(state, 'template', template.id); }
+function draftProduct() { return state.draft && state.draft.productId ? state.products.find(p => p.id === state.draft.productId) || null : null; }
+
+/** Which list of characteristics the feature editor is operating on (template or product). */
+function featureHost() {
+  if (ui.tab === 'products') {
+    const p = state.products.find(x => x.id === ui.editProductId);
+    if (p) return { kind: 'product', record: p, features: p.features, touch: () => { p.updatedAt = new Date().toISOString(); Sync.markDirty(state, 'product', p.id); if (state.draft && state.draft.productId === p.id) state.draft = Core.syncReportFeatures(state.draft, activeTemplate(), p); }, rerender: () => render() };
+  }
+  const tpl = editTemplate();
+  return { kind: 'template', record: tpl, features: tpl.features, touch: () => { touch(tpl); applyTemplateChangeToDraft(tpl); }, rerender: () => renderTemplates() };
+}
 
 function ensureDraft() {
   if (!state.draft) state.draft = Core.createReport(activeTemplate());
   const tpl = state.templates.find(x => x.id === state.draft.templateId);
-  if (tpl) state.draft = Core.syncReportFeatures(state.draft, tpl);
+  const product = draftProduct();
+  if (tpl) state.draft = Core.syncReportFeatures(state.draft, tpl, product);
 }
 
 /** Move the current draft to the archive (if it has content) and open a new one from `template`. */
-function startNewReport(template, { carryFrom = state.draft, confirmed = true } = {}) {
+function startNewReport(template, { carryFrom = state.draft, confirmed = true, product = null } = {}) {
   if (!confirmed) return false;
   const old = state.draft;
   let archived = false;
   if (old && Core.reportHasContent(old)) {
     old.updatedAt = new Date().toISOString();
     state.archive = [old, ...state.archive.filter(r => r.id !== old.id)].slice(0, Store.MAX_ARCHIVE);
+    Sync.markDirty(state, 'report', old.id);
     archived = true;
     const oldTpl = state.templates.find(x => x.id === old.templateId);
     if (oldTpl && oldTpl.numbering.mode === 'auto') {
@@ -46,9 +66,13 @@ function startNewReport(template, { carryFrom = state.draft, confirmed = true } 
     }
   }
   state.activeTemplateId = template.id;
-  state.draft = Core.createReport(template, carryFrom);
-  persist();
+  state.draft = Core.createReport(template, carryFrom, new Date(), product);
+  persist(); scheduleSync();
   return archived;
+}
+function startNewReportForProduct(product) {
+  const archived = startNewReport(activeTemplate(), { product });
+  toast(archived ? t('toast_archived') : t('toast_new_report'));
 }
 
 /** If the archived report's number follows the template pattern, continue after it. */
@@ -111,12 +135,22 @@ function renderShell() {
     <p class="side-note">${esc(t('template_picker_hint'))}</p>`;
   const backup = state.settings.lastBackupAt ? t('last_backup', { date: formatDateTime(state.settings.lastBackupAt) }) : t('last_backup_never');
   $('#backupStatus').textContent = backup;
+  renderSyncIndicator();
   $$('[data-tab]').forEach(b => {
     const active = b.dataset.tab === ui.tab;
     b.classList.toggle('active', active);
     b.setAttribute('aria-current', active ? 'page' : 'false');
   });
   void tpl;
+}
+
+function renderSyncIndicator() {
+  const dot = $('#syncDot'), text = $('#syncText');
+  if (!dot || !text) return;
+  const configured = Sync.syncConfigured(state.settings);
+  const pending = Object.keys(state.settings.dirty || {}).length + Object.keys(state.settings.deleted || {}).length;
+  dot.className = 'dot ' + (!configured ? 'off' : syncState.error ? 'err' : pending ? 'pending' : 'ok');
+  text.textContent = configured ? syncStatusText(ctx) : t('local_only');
 }
 
 function heading(kicker, title, intro, actions = '') {
@@ -127,7 +161,7 @@ function heading(kicker, title, intro, actions = '') {
 function headerField(key, report, template) {
   const def = Core.HEADER_FIELDS.find(f => f.key === key);
   const value = report.header[key] || '';
-  const locked = Core.isLocked(template, key);
+  const locked = Core.isLocked(template, key) || Core.isProductLocked(report, key);
   const id = 'h_' + key;
   let control;
   if (key === 'aql') control = aqlControl('h:aql', value, { disabled: locked, id });
@@ -219,6 +253,7 @@ function renderReport() {
     <button type="button" class="btn btn-primary" data-action="go-preview">${esc(t('preview_pdf'))}</button>`;
   $('#main').innerHTML = heading(t('report_kicker'), t('report_title'), t('report_intro'), actions) +
     `<div id="warnings">${warningsHtml(report, tpl)}</div>
+    <section class="panel"><div class="product-bar">${productBarHtml(report)}</div></section>
     <div class="report-layout"><div class="report-main">
       <section class="panel"><div class="panel-head"><div><h2>${esc(t('section_order'))}</h2><p>${esc(t('section_order_note'))}</p></div></div>
         <div class="panel-body field-grid">${orderKeys.map(k => headerField(k, report, tpl)).join('')}</div></section>
@@ -238,6 +273,25 @@ function renderReport() {
       <section class="panel"><div class="panel-body" id="summaryPanel">${summaryHtml(report)}</div>
         <div class="panel-foot"><button type="button" class="btn btn-primary btn-block" data-action="go-preview">${esc(t('preview_pdf'))}</button></div></section>
     </aside></div>`;
+}
+
+function productBarHtml(report) {
+  const product = draftProduct();
+  const chip = product
+    ? `<span class="chip" dir="auto">${esc(t('product_current'))}: <b dir="ltr">${esc(product.partNo)}</b> ${product.revision ? `<span>Rev ${esc(product.revision)}</span>` : ''} ${product.partName ? `<span>· ${esc(product.partName)}</span>` : ''}</span>
+       <button type="button" class="btn btn-small" data-action="product-open-current">${esc(t('product_open'))}</button>`
+    : `<span class="chip">${esc(t('product_none'))}</span>`;
+  return `${chip}<div class="product-wrap"><input id="productSearch" type="search" class="search" placeholder="${attr(t('product_pick_ph'))}" value="${attr(ui.productSearch)}" autocomplete="off" aria-label="${attr(t('product_pick'))}"><div id="productResults" class="product-results" hidden></div></div>
+    <button type="button" class="btn btn-small" data-action="go-import">${esc(t('product_import'))}</button>`;
+}
+function renderProductResults() {
+  const box = $('#productResults'); if (!box) return;
+  const q = ui.productSearch.trim();
+  if (!q) { box.hidden = true; box.innerHTML = ''; return; }
+  const list = filterProducts(state.products, q).slice(0, 12);
+  box.innerHTML = list.length ? list.map(p => `<button type="button" data-action="product-use" data-id="${attr(p.id)}"><b>${esc(p.partNo)}</b> ${p.revision ? 'Rev ' + esc(p.revision) : ''} ${p.partName ? '· ' + esc(p.partName) : ''} ${p.customer ? '<span class="muted">· ' + esc(p.customer) + '</span>' : ''}</button>`).join('')
+    : `<button type="button" disabled>${esc(t('products_empty'))}</button>`;
+  box.hidden = false;
 }
 
 function refreshReportDerived() {
@@ -358,8 +412,7 @@ function renderTemplates() {
 }
 
 function refreshFeaturePreview(id) {
-  const tpl = editTemplate();
-  const f = tpl.features.find(x => x.id === id);
+  const f = featureHost().features.find(x => x.id === id);
   const row = $(`.fe-row[data-feature="${CSS.escape(id)}"]`);
   if (!f || !row) return;
   const problems = Core.featureProblems(f);
@@ -402,8 +455,19 @@ function render() {
   if (ui.tab === 'archive') renderArchive();
   else if (ui.tab === 'templates') renderTemplates();
   else if (ui.tab === 'preview') renderPreview();
+  else if (ui.tab === 'products') $('#main').innerHTML = renderProducts(ctx);
+  else if (ui.tab === 'import') $('#main').innerHTML = renderImport(ctx);
+  else if (ui.tab === 'settings') $('#main').innerHTML = renderSettings(ctx);
   else renderReport();
   renderPrintSheet();
+}
+let renderTimer;
+function renderSoon() { clearTimeout(renderTimer); renderTimer = setTimeout(render, 350); }
+function renderKeepingFocus(id) {
+  const el = document.getElementById(id); const pos = el ? el.selectionStart : null;
+  render();
+  const again = document.getElementById(id);
+  if (again) { again.focus(); if (pos != null && again.setSelectionRange) try { again.setSelectionRange(pos, pos); } catch (_) { /* not a text input */ } }
 }
 function go(tab) { ui.tab = tab; window.scrollTo(0, 0); render(); }
 
@@ -502,9 +566,10 @@ function clickAction(action, el) {
       const old = state.draft;
       state.archive = state.archive.filter(x => x.id !== r.id);
       if (old && Core.reportHasContent(old)) state.archive = [old, ...state.archive].slice(0, Store.MAX_ARCHIVE);
+      if (old && Core.reportHasContent(old)) Sync.markDirty(state, 'report', old.id);
       state.draft = r;
       if (state.templates.some(x => x.id === r.templateId)) state.activeTemplateId = r.templateId;
-      persist(); return go('report');
+      persist(); scheduleSync(); return go('report');
     }
     case 'archive-duplicate': {
       const r = state.archive.find(x => x.id === el.dataset.id);
@@ -520,7 +585,8 @@ function clickAction(action, el) {
       const r = state.archive.find(x => x.id === el.dataset.id);
       if (!r || !confirmAction(t('confirm_delete_report', { no: r.header.reportNo || '' }))) return;
       state.archive = state.archive.filter(x => x.id !== r.id);
-      persist(); renderArchive(); return toast(t('toast_report_deleted'));
+      Sync.markDeleted(state, 'report', r.id);
+      persist(); scheduleSync(); renderArchive(); return toast(t('toast_report_deleted'));
     }
     case 'template-edit': ui.editTemplateId = el.dataset.id; return renderTemplates();
     case 'template-use': return switchTemplate(el.dataset.id);
@@ -529,7 +595,7 @@ function clickAction(action, el) {
       const fresh = Core.defaultTemplate();
       fresh.company = { ...tpl.company };
       fresh.name = t('template_new');
-      state.templates.push(fresh); ui.editTemplateId = fresh.id;
+      state.templates.push(fresh); ui.editTemplateId = fresh.id; touch(fresh);
       persist(); renderTemplates(); return toast(t('toast_template_created'));
     }
     case 'template-duplicate': {
@@ -537,12 +603,13 @@ function clickAction(action, el) {
       const clone = JSON.parse(JSON.stringify(tpl));
       clone.id = Core.newId(); clone.name = `${tpl.name} (2)`; clone.updatedAt = new Date().toISOString();
       clone.features.forEach(f => { f.id = Core.newId(); });
-      state.templates.push(clone); ui.editTemplateId = clone.id;
+      state.templates.push(clone); ui.editTemplateId = clone.id; touch(clone);
       persist(); renderTemplates(); return toast(t('toast_template_duplicated'));
     }
     case 'template-delete': {
       if (state.templates.length < 2 || !confirmAction(t('confirm_delete_template', { name: tpl.name }))) return;
       state.templates = state.templates.filter(x => x.id !== tpl.id);
+      Sync.markDeleted(state, 'template', tpl.id);
       if (state.activeTemplateId === tpl.id) {
         state.activeTemplateId = state.templates[0].id;
         if (state.draft && state.draft.templateId === tpl.id) startNewReport(state.templates[0]);
@@ -552,36 +619,55 @@ function clickAction(action, el) {
     }
     case 'logo-remove': tpl.company.logo = ''; touch(tpl); persist(); return renderTemplates();
     case 'feature-add': {
-      if (tpl.features.length >= Core.MAX_FEATURES) return;
-      const last = tpl.features[tpl.features.length - 1];
+      const host = featureHost();
+      if (host.features.length >= Core.MAX_FEATURES) return;
+      const last = host.features[host.features.length - 1];
       const f = Core.blankFeature(el.dataset.kind || 'numeric');
       if (f.kind === 'numeric' && last && last.kind === 'numeric') { f.method = last.method; f.unit = last.unit; f.upper = last.upper; f.lower = last.lower; f.symmetric = last.symmetric; }
-      tpl.features.push(f); touch(tpl); applyTemplateChangeToDraft(tpl);
-      persist(); renderTemplates();
+      host.features.push(f); host.touch();
+      persist(); host.rerender();
       const input = $(`.fe-row[data-feature="${CSS.escape(f.id)}"] input[name="f:label"]`);
       if (input) input.focus();
       return toast(t('toast_feature_added'));
     }
     case 'feature-remove': {
-      if (tpl.features.length < 2) return toast(t('toast_last_feature'));
+      const host = featureHost();
+      if (host.features.length < 2) return toast(t('toast_last_feature'));
       if (!confirmAction(t('confirm_remove_feature'))) return;
-      tpl.features = tpl.features.filter(f => f.id !== el.dataset.id); touch(tpl); applyTemplateChangeToDraft(tpl);
-      persist(); return renderTemplates();
+      host.record.features = host.features.filter(f => f.id !== el.dataset.id); host.touch();
+      persist(); return host.rerender();
     }
     case 'feature-duplicate': {
-      const i = tpl.features.findIndex(f => f.id === el.dataset.id);
-      if (i === -1 || tpl.features.length >= Core.MAX_FEATURES) return;
-      tpl.features.splice(i + 1, 0, { ...tpl.features[i], id: Core.newId() }); touch(tpl); applyTemplateChangeToDraft(tpl);
-      persist(); return renderTemplates();
+      const host = featureHost();
+      const i = host.features.findIndex(f => f.id === el.dataset.id);
+      if (i === -1 || host.features.length >= Core.MAX_FEATURES) return;
+      host.features.splice(i + 1, 0, { ...host.features[i], id: Core.newId() }); host.touch();
+      persist(); return host.rerender();
     }
     case 'feature-up': case 'feature-down': {
-      const i = tpl.features.findIndex(f => f.id === el.dataset.id);
+      const host = featureHost();
+      const i = host.features.findIndex(f => f.id === el.dataset.id);
       const j = action === 'feature-up' ? i - 1 : i + 1;
-      if (i === -1 || j < 0 || j >= tpl.features.length) return;
-      [tpl.features[i], tpl.features[j]] = [tpl.features[j], tpl.features[i]]; touch(tpl); applyTemplateChangeToDraft(tpl);
-      persist(); return renderTemplates();
+      if (i === -1 || j < 0 || j >= host.features.length) return;
+      [host.features[i], host.features[j]] = [host.features[j], host.features[i]]; host.touch();
+      persist(); return host.rerender();
     }
-    default: return undefined;
+    case 'go-products': return go('products');
+    case 'go-import': ui.import = newImportState(); return go('import');
+    case 'go-settings': return go('settings');
+    case 'product-open-current': { const p = draftProduct(); if (p) { ui.editProductId = p.id; go('products'); } return undefined; }
+    case 'product-use': {
+      const p = state.products.find(x => x.id === el.dataset.id); if (!p) return undefined;
+      if (Core.reportHasContent(state.draft) && !confirmAction(t('confirm_change_product'))) return undefined;
+      ui.productSearch = '';
+      startNewReportForProduct(p); return go('report');
+    }
+    default: {
+      if (onProductsAction(ctx, action, el)) return undefined;
+      if (action.startsWith('im-')) return onImportAction(ctx, action, el);
+      if (action.startsWith('sync-')) return onSettingsAction(ctx, action);
+      return undefined;
+    }
   }
 }
 
@@ -589,6 +675,10 @@ function onInput(event) {
   const el = event.target;
   const name = el.name || '';
   if (el.id === 'archiveSearch') { ui.archiveQuery = el.value; renderArchive(); $('#archiveSearch').focus(); const s = $('#archiveSearch'); s.setSelectionRange(s.value.length, s.value.length); return; }
+  if (ui.tab === 'import') { onImportInput(ctx, el); return; }
+  if (ui.tab === 'settings') { onSettingsInput(ctx, el); renderSyncIndicator(); return; }
+  if (ui.tab === 'products' && !name.startsWith('f:')) { onProductsInput(ctx, el); return; }
+  if (ui.tab === 'report' && el.id === 'productSearch') { ui.productSearch = el.value; renderProductResults(); return; }
   if (ui.tab === 'report') {
     const report = state.draft;
     if (name.startsWith('h:')) {
@@ -597,7 +687,7 @@ function onInput(event) {
       if (key.endsWith('__other')) { key = key.slice(0, -7); }
       else if (key === 'aql' && value === '__other') { const other = $('.aql-other', el.parentElement); other.hidden = false; other.focus(); value = other.value; }
       else if (key === 'aql') { const other = $('.aql-other', el.parentElement); if (other) other.hidden = true; }
-      if (!Core.HEADER_KEYS.includes(key) || Core.isLocked(activeTemplate(), key)) return;
+      if (!Core.HEADER_KEYS.includes(key) || Core.isLocked(activeTemplate(), key) || Core.isProductLocked(report, key)) return;
       report.header[key] = value; report.updatedAt = new Date().toISOString();
       refreshReportDerived(); persistSoon(); return;
     }
@@ -608,7 +698,7 @@ function onInput(event) {
     }
     if (el.id === 'remarks') { report.remarks = el.value; report.updatedAt = new Date().toISOString(); persistSoon(); return; }
   }
-  if (ui.tab === 'templates') {
+  if (ui.tab === 'templates' || ui.tab === 'products') {
     const tpl = editTemplate();
     if (name === 't:name') { tpl.name = el.value; touch(tpl); persistSoon(); renderShellSoon(); return; }
     if (name.startsWith('c:')) { tpl.company[name.slice(2)] = el.value; touch(tpl); persistSoon(); return; }
@@ -639,12 +729,13 @@ function onInput(event) {
       tpl.fields[key].value = value.slice(0, 240); touch(tpl); applyTemplateChangeToDraft(tpl); persistSoon(); return;
     }
     if (name.startsWith('f:')) {
-      const f = tpl.features.find(x => x.id === el.dataset.fid); if (!f) return;
+      const host = featureHost();
+      const f = host.features.find(x => x.id === el.dataset.fid); if (!f) return;
       const k = name.slice(2);
-      if (k === 'kind') { f.kind = Core.FEATURE_KINDS.includes(el.value) ? el.value : 'numeric'; if (f.kind !== 'numeric') { f.nominal = ''; f.upper = ''; f.lower = ''; f.unit = ''; } else if (!f.unit) f.unit = 'mm'; touch(tpl); applyTemplateChangeToDraft(tpl); persist(); renderTemplates(); return; }
-      if (k === 'symmetric') { f.symmetric = el.value === '1'; touch(tpl); applyTemplateChangeToDraft(tpl); persist(); renderTemplates(); return; }
-      if (['label', 'nominal', 'upper', 'lower', 'method', 'unit', 'note'].includes(k)) f[k] = el.value;
-      touch(tpl); applyTemplateChangeToDraft(tpl); persistSoon(); refreshFeaturePreview(f.id);
+      if (k === 'kind') { f.kind = Core.FEATURE_KINDS.includes(el.value) ? el.value : 'numeric'; if (f.kind !== 'numeric') { f.nominal = ''; f.upper = ''; f.lower = ''; f.unit = ''; } else if (!f.unit) f.unit = 'mm'; host.touch(); persist(); host.rerender(); return; }
+      if (k === 'symmetric') { f.symmetric = el.value === '1'; host.touch(); persist(); host.rerender(); return; }
+      if (['label', 'nominal', 'upper', 'lower', 'method', 'unit', 'note', 'suffix'].includes(k)) f[k] = el.value;
+      host.touch(); persistSoon(); refreshFeaturePreview(f.id);
     }
   }
 }
@@ -656,7 +747,46 @@ function onChange(event) {
   if (el.id === 'quickTemplate') return switchTemplate(el.value);
   if (el.id === 'importFile') { const f = el.files && el.files[0]; el.value = ''; return importBackupFile(f); }
   if (el.id === 'logoUpload') { const f = el.files && el.files[0]; el.value = ''; return loadLogo(f); }
+  if (ui.tab === 'import') return onImportChange(ctx, el);
   return undefined;
+}
+
+function onDrag(event) {
+  const zone = event.target.closest && event.target.closest('#dropZone');
+  if (!zone) return;
+  if (event.type === 'dragover') { event.preventDefault(); zone.classList.add('over'); }
+  if (event.type === 'dragleave') zone.classList.remove('over');
+  if (event.type === 'drop') { event.preventDefault(); zone.classList.remove('over'); const f = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0]; if (f) startImport(ctx, f); }
+}
+
+// ---------- sync ----------
+const normalizers = { product: Store.normalizeProduct, template: Store.normalizeTemplate, report: Store.normalizeReport };
+function scheduleSync(delay = 2500) {
+  if (!Sync.syncConfigured(state.settings)) return;
+  clearTimeout(syncState.timer);
+  syncState.timer = setTimeout(() => runSync(false), delay);
+}
+async function runSync(manual = false) {
+  if (!Sync.syncConfigured(state.settings) || syncState.running) return false;
+  if (navigator.onLine === false) { renderSyncIndicator(); return false; }
+  syncState.running = true;
+  try {
+    let result;
+    let rounds = 0;
+    do { result = await Sync.runSync(state, normalizers); rounds++; } while (rounds < 10 && result.pulled && (result.pulled.added + result.pulled.updated + result.pulled.deleted) >= 500);
+    syncState.error = '';
+    ensureDraft();
+    persist();
+    const changed = result.pulled.added + result.pulled.updated + result.pulled.deleted;
+    if (changed && ['products', 'archive', 'templates', 'settings'].includes(ui.tab)) render(); else renderSyncIndicator();
+    if (manual) toast(t('toast_synced'));
+    return true;
+  } catch (error) {
+    syncState.error = error.message === 'unauthorized' ? t('sync_unauthorized') : String(error.message || error);
+    renderSyncIndicator();
+    if (manual) toast(t('toast_sync_failed'));
+    return false;
+  } finally { syncState.running = false; }
 }
 
 function onClick(event) {
@@ -716,12 +846,28 @@ function init() {
   document.addEventListener('change', onChange);
   document.addEventListener('click', onClick);
   document.addEventListener('keydown', onKeydown);
+  for (const type of ['dragover', 'dragleave', 'drop']) document.addEventListener(type, onDrag);
+  document.addEventListener('click', event => { if (!event.target.closest('.product-wrap')) { const box = $('#productResults'); if (box) box.hidden = true; } }, true);
   window.addEventListener('beforeunload', () => { if (ui.saveTimer) persist(); });
   window.addEventListener('beforeprint', renderPrintSheet);
+  window.addEventListener('online', () => scheduleSync(500));
   render();
   persist();
   registerServiceWorker();
-  window.UCM = { get state() { return state; }, render, Core, Store, reportFileName };
+  if (Sync.syncConfigured(state.settings)) { scheduleSync(300); setInterval(() => scheduleSync(0), 5 * 60 * 1000); }
+  window.UCM = { get state() { return state; }, get ui() { return ui; }, render, Core, Store, Sync, reportFileName, runSync, startImport: file => startImport(ctx, file) };
 }
+
+/** Shared context for the UI modules. */
+const ctx = {
+  get state() { return state; }, get ui() { return ui; }, syncState, version: APP_VERSION,
+  persist, persistSoon, render, renderSoon, renderKeepingFocus, renderListSoon: renderSoon, go, toast, confirm: confirmAction, heading, formatDateTime,
+  markDirty: (kind, id) => { Sync.markDirty(state, kind, id); scheduleSync(); },
+  markDeleted: (kind, id) => { Sync.markDeleted(state, kind, id); scheduleSync(); },
+  activeTemplate, startNewReportForProduct, featureEditorRow, runSync,
+  syncDraftWithProduct: p => { if (state.draft && state.draft.productId === p.id) { state.draft = Core.syncReportFeatures(state.draft, activeTemplate(), p); for (const key of Core.PRODUCT_FIELDS) if (String(p[key] || '').trim()) state.draft.header[key] = String(p[key]); } },
+  aiAvailable: () => Sync.syncConfigured(state.settings) && (!syncState.health || syncState.health.ai !== false),
+  fileUrl: id => (Sync.syncConfigured(state.settings) ? Sync.fileUrl(state.settings, id) : ''),
+};
 
 init();

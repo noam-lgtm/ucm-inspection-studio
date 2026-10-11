@@ -1,0 +1,24 @@
+name = "ucm-inspection-sync"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+# Secrets (set with `wrangler secret put <NAME>`):
+#   WORKSPACE_KEY      long random string every inspector's browser is configured with
+#   ANTHROPIC_API_KEY  optional; enables /api/extract (AI reading of PDF pages and photos)
+
+[vars]
+ALLOWED_ORIGIN = "https://noam-lgtm.github.io"
+AI_MODEL = "claude-opus-5-5"
+MAX_FILE_MB = "25"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ucm-inspection"
+database_id = "REPLACE_WITH_ID_FROM_wrangler_d1_create"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "ucm-inspection-files"
+
+[triggers]
+crons = ["30 2 * * *"]
