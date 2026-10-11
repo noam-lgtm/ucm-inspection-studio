@@ -1,0 +1,13 @@
+{
+  "name": "UCM Inspection Studio",
+  "short_name": "Inspection",
+  "description": "Final Inspection Report generator for CNC manufacturing. Runs entirely in the browser.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f5f3",
+  "theme_color": "#2f5a1d",
+  "lang": "he",
+  "dir": "rtl",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

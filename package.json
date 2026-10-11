@@ -1,0 +1,20 @@
+{
+  "name": "ucm-inspection-studio",
+  "version": "2.1.0",
+  "private": true,
+  "description": "Browser-only Final Inspection Report generator for CNC manufacturing (GitHub Pages, no server).",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/unit/**/*.test.js\"",
+    "test:worker": "node --test \"tests/worker/**/*.test.js\"",
+    "test:e2e": "node --test \"tests/e2e/**/*.test.js\"",
+    "test:all": "npm test && npm run test:worker && npm run test:e2e",
+    "serve": "node tests/helpers/static-server.js 8787"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "miniflare": "^4.20260730.0",
+    "pdfjs-dist": "^6.4.299",
+    "playwright": "1.56.1"
+  }
+}
